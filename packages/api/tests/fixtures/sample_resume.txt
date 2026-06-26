@@ -1,0 +1,45 @@
+JORDAN AVERY
+Senior Backend Software Engineer
+Austin, TX  |  jordan.avery@example.com  |  (512) 555-0147  |  github.com/jordanavery
+
+SUMMARY
+Senior backend engineer with 8 years of experience designing and operating
+distributed services and REST APIs at scale. Specialized in Python and Go
+microservices on AWS, with deep experience in PostgreSQL, Redis, and event-driven
+architectures using Kafka. Comfortable owning systems end to end: design, build,
+deploy, on-call. Authorized to work in the United States; no sponsorship required.
+
+SKILLS
+Languages: Python, Go, SQL, TypeScript, Bash
+Backend: FastAPI, Flask, gRPC, REST API design, GraphQL
+Data: PostgreSQL, Redis, Kafka, Elasticsearch, DynamoDB
+Cloud / Infra: AWS (EC2, S3, Lambda, RDS, ECS), Docker, Kubernetes, Terraform
+Practices: CI/CD, microservices, distributed systems, observability, unit testing
+
+EXPERIENCE
+Senior Backend Engineer — Brightwave Payments, Austin, TX        2021 - Present
+- Led design of a distributed payment-processing platform handling 12M
+  transactions per day, cutting p99 latency by 40% via async Python services.
+- Built and operated 15+ microservices in Python (FastAPI) and Go on AWS ECS,
+  with PostgreSQL and Redis backing stores.
+- Owned the Kafka-based event pipeline for settlement and reconciliation; defined
+  schemas, partitioning, and exactly-once consumer semantics.
+- Mentored 4 engineers; ran the on-call rotation and incident reviews.
+
+Backend Engineer — Northwind Logistics, Remote                   2018 - 2021
+- Implemented REST APIs in Python (Flask) for a fleet-tracking product serving
+  2,000+ B2B customers.
+- Migrated a monolith to containerized microservices on Kubernetes, reducing
+  deploy time from 45 minutes to under 5.
+- Added end-to-end observability (Prometheus, Grafana) and automated CI/CD.
+
+Software Engineer — Cobalt Systems, Dallas, TX                   2016 - 2018
+- Wrote data-processing pipelines in Python and SQL over PostgreSQL.
+- Built internal tooling and automated test suites; raised coverage to 85%.
+
+EDUCATION
+B.S. in Computer Science — University of Texas at Austin, 2016
+
+PREFERENCES
+Open to remote or hybrid roles (US). Targeting senior backend / platform
+engineering positions. Full-time only.

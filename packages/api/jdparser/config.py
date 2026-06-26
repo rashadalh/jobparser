@@ -56,6 +56,14 @@ MODEL_GLM: str = "z-ai/glm-5.2"                          # logic
 MODEL_GEMINI_FLASH_LITE: str = "google/gemini-3.1-flash-lite"  # text extraction
 LLM_MAX_RETRIES: int = 2                     # instructor re-ask count on validation failure
 
+# --- Durable flat-file stores (SPEC §3.7/§3.9; created at import) ------------
+DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
+PROFILES_DIR: Path = DATA_DIR / "profiles"   # resume cache:  {cache_key}.json
+RUNS_DIR: Path = DATA_DIR / "runs"           # run records:   {run_id}.json
+UPLOADS_DIR: Path = DATA_DIR / "uploads"     # saved uploads: {run_id}.{ext}
+for _d in (PROFILES_DIR, RUNS_DIR, UPLOADS_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
+
 # --- Secrets (from env; .env gitignored) -------------------------------------
 OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_APP_URL: str = os.getenv("OPENROUTER_APP_URL", "")
