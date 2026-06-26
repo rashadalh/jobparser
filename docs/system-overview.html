@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Resume-Driven Job Matching System</title>
+    <style>
+      :root {
+        --ink: #1d252c;
+        --muted: #5a6872;
+        --line: #d8e1e6;
+        --panel: #ffffff;
+        --paper: #f6f8f4;
+        --band: #eaf1ef;
+        --accent: #0f766e;
+        --accent-dark: #0b4f4a;
+        --gold: #b7791f;
+        --rose: #b8325d;
+        --blue: #2563a8;
+        --green-soft: #dff4ec;
+        --gold-soft: #f7ecd2;
+        --rose-soft: #f8e2e9;
+        --blue-soft: #dfeaf8;
+        --shadow: 0 16px 40px rgba(29, 37, 44, 0.08);
+        --radius: 8px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--paper);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      a {
+        color: var(--accent-dark);
+      }
+
+      .hero {
+        min-height: 76vh;
+        display: grid;
+        align-items: center;
+        padding: 56px 24px 42px;
+        background:
+          linear-gradient(rgba(15, 42, 40, 0.78), rgba(15, 42, 40, 0.74)),
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'%3E%3Crect width='1400' height='900' fill='%23dce8e2'/%3E%3Cg fill='none' stroke='%2378948e' stroke-width='2' opacity='0.55'%3E%3Cpath d='M120 130h300v180H120zM520 130h300v180H520zM920 130h300v180H920zM180 420h360v210H180zM660 420h560v210H660z'/%3E%3Cpath d='M420 220h100M820 220h100M540 525h120'/%3E%3C/g%3E%3Cg fill='%23ffffff' opacity='0.62'%3E%3Crect x='150' y='170' width='220' height='16' rx='4'/%3E%3Crect x='150' y='205' width='170' height='12' rx='3'/%3E%3Crect x='150' y='232' width='205' height='12' rx='3'/%3E%3Crect x='550' y='170' width='210' height='16' rx='4'/%3E%3Crect x='550' y='205' width='230' height='12' rx='3'/%3E%3Crect x='950' y='170' width='190' height='16' rx='4'/%3E%3Crect x='950' y='205' width='240' height='12' rx='3'/%3E%3Crect x='220' y='470' width='260' height='16' rx='4'/%3E%3Crect x='220' y='508' width='210' height='12' rx='3'/%3E%3Crect x='700' y='470' width='420' height='16' rx='4'/%3E%3Crect x='700' y='508' width='360' height='12' rx='3'/%3E%3Crect x='700' y='545' width='460' height='12' rx='3'/%3E%3C/g%3E%3C/svg%3E");
+        background-size: cover;
+        background-position: center;
+      }
+
+      .hero-inner,
+      .section-inner {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+      }
+
+      .hero-kicker {
+        margin: 0 0 14px;
+        color: #bce6db;
+        font-size: 0.88rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 880px;
+        margin: 0;
+        color: #fff;
+        font-size: clamp(2.6rem, 7vw, 6.25rem);
+        line-height: 0.94;
+        letter-spacing: 0;
+      }
+
+      .hero-copy {
+        max-width: 720px;
+        margin: 26px 0 0;
+        color: #e4f2ee;
+        font-size: clamp(1.05rem, 2vw, 1.28rem);
+      }
+
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 28px;
+      }
+
+      .pill {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.34);
+        border-radius: 999px;
+        padding: 6px 12px;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.09);
+        font-size: 0.9rem;
+        font-weight: 650;
+      }
+
+      section {
+        padding: 64px 24px;
+      }
+
+      section.band {
+        background: var(--band);
+      }
+
+      .section-title {
+        max-width: 760px;
+        margin-bottom: 28px;
+      }
+
+      .section-title h2 {
+        margin: 0;
+        font-size: clamp(1.8rem, 4vw, 3rem);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .section-title p {
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 1.02rem;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .summary-card,
+      .agent-card,
+      .schema-card,
+      .rule-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .summary-card {
+        padding: 22px;
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 1.05rem;
+      }
+
+      .summary-card span {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .flow {
+        display: grid;
+        gap: 14px;
+      }
+
+      .flow-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .flow-node {
+        position: relative;
+        min-height: 126px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px;
+        background: #fff;
+      }
+
+      .flow-node::after {
+        content: "->";
+        position: absolute;
+        top: 50%;
+        right: -18px;
+        color: var(--muted);
+        font-weight: 800;
+        transform: translateY(-50%);
+      }
+
+      .flow-row .flow-node:last-child::after {
+        display: none;
+      }
+
+      .flow-node small {
+        display: inline-block;
+        margin-bottom: 8px;
+        color: var(--accent-dark);
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .flow-node h3 {
+        margin: 0 0 8px;
+        font-size: 1.02rem;
+        line-height: 1.2;
+      }
+
+      .flow-node p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      .cache-lane {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 16px;
+        align-items: center;
+        margin-top: 18px;
+      }
+
+      .decision {
+        min-width: 132px;
+        border: 2px solid var(--accent);
+        border-radius: var(--radius);
+        padding: 14px;
+        text-align: center;
+        background: var(--green-soft);
+        font-weight: 800;
+      }
+
+      .lane-box {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 18px;
+        background: #fff;
+      }
+
+      .lane-box h3 {
+        margin: 0 0 8px;
+        font-size: 1.05rem;
+      }
+
+      .lane-box p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .agents-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .agent-card {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 16px;
+        padding: 20px;
+      }
+
+      .agent-icon {
+        display: grid;
+        width: 46px;
+        height: 46px;
+        place-items: center;
+        border-radius: var(--radius);
+        color: #fff;
+        background: var(--accent);
+        font-weight: 900;
+      }
+
+      .agent-card:nth-child(2) .agent-icon {
+        background: var(--blue);
+      }
+
+      .agent-card:nth-child(3) .agent-icon {
+        background: var(--gold);
+      }
+
+      .agent-card:nth-child(4) .agent-icon {
+        background: var(--rose);
+      }
+
+      .agent-card h3 {
+        margin: 0 0 8px;
+        font-size: 1.12rem;
+      }
+
+      .agent-card p {
+        margin: 0 0 12px;
+        color: var(--muted);
+      }
+
+      .agent-card ul,
+      .rule-card ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+      }
+
+      .agent-card li,
+      .rule-card li {
+        margin: 4px 0;
+      }
+
+      .two-column {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 24px;
+        align-items: start;
+      }
+
+      .schema-card {
+        overflow: hidden;
+      }
+
+      .schema-card h3 {
+        margin: 0;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+        font-size: 1rem;
+      }
+
+      pre {
+        margin: 0;
+        overflow-x: auto;
+        padding: 20px;
+        background: #14211f;
+        color: #d7efe7;
+        font-size: 0.9rem;
+        line-height: 1.45;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      }
+
+      .subgraph {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .subgraph-step {
+        min-height: 118px;
+        border-top: 5px solid var(--accent);
+        border-radius: var(--radius);
+        padding: 16px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .subgraph-step:nth-child(2) {
+        border-color: var(--blue);
+      }
+
+      .subgraph-step:nth-child(3) {
+        border-color: var(--gold);
+      }
+
+      .subgraph-step:nth-child(4) {
+        border-color: var(--rose);
+      }
+
+      .subgraph-step:nth-child(5) {
+        border-color: var(--accent-dark);
+      }
+
+      .subgraph-step strong {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      .subgraph-step span {
+        color: var(--muted);
+        font-size: 0.93rem;
+      }
+
+      .rules-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .rule-card {
+        padding: 20px;
+      }
+
+      .rule-label {
+        display: inline-flex;
+        margin-bottom: 12px;
+        border-radius: 999px;
+        padding: 5px 10px;
+        color: var(--accent-dark);
+        background: var(--green-soft);
+        font-size: 0.84rem;
+        font-weight: 800;
+      }
+
+      .rule-card:nth-child(2) .rule-label {
+        color: #16477a;
+        background: var(--blue-soft);
+      }
+
+      .rule-card:nth-child(3) .rule-label {
+        color: #7a4a0a;
+        background: var(--gold-soft);
+      }
+
+      .rule-card h3 {
+        margin: 0 0 10px;
+      }
+
+      .final-band {
+        background: #102622;
+        color: #eef8f5;
+      }
+
+      .final-band p {
+        max-width: 850px;
+        margin: 0;
+        color: #cce1dc;
+        font-size: 1.08rem;
+      }
+
+      .final-band strong {
+        color: #fff;
+      }
+
+      @media (max-width: 980px) {
+        .summary-grid,
+        .flow-row,
+        .agents-grid,
+        .two-column,
+        .rules-grid,
+        .subgraph {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .cache-lane {
+          grid-template-columns: 1fr;
+        }
+
+        .decision {
+          width: 100%;
+        }
+
+        .flow-node::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .hero {
+          min-height: 78vh;
+          padding: 42px 18px 32px;
+        }
+
+        section {
+          padding: 46px 18px;
+        }
+
+        .summary-grid,
+        .flow-row,
+        .agents-grid,
+        .two-column,
+        .rules-grid,
+        .subgraph {
+          grid-template-columns: 1fr;
+        }
+
+        .agent-card {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero-inner">
+        <p class="hero-kicker">System overview</p>
+        <h1>Resume-Driven Job Matching with LangGraph</h1>
+        <p class="hero-copy">
+          A state-machine architecture that uses Adzuna for job discovery,
+          full job-description extraction for evidence, and specialized LLM
+          nodes for resume parsing, search planning, requirement parsing, and
+          fit judgment.
+        </p>
+        <div class="hero-meta" aria-label="Architecture highlights">
+          <span class="pill">Adzuna discovery</span>
+          <span class="pill">Resume profile cache</span>
+          <span class="pill">Full JD required</span>
+          <span class="pill">Structured LLM outputs</span>
+          <span class="pill">LangGraph fan-out</span>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>What the system does</h2>
+            <p>
+              The product promise is narrow and useful: only show jobs where the
+              final job description was extracted and the candidate's resume
+              appears to meet the stated requirements.
+            </p>
+          </div>
+
+          <div class="summary-grid">
+            <article class="summary-card">
+              <strong>Parse once</strong>
+              <span>
+                Resume text is normalized and fingerprinted. Known resumes load
+                an existing structured profile instead of re-calling the LLM.
+              </span>
+            </article>
+            <article class="summary-card">
+              <strong>Search broadly</strong>
+              <span>
+                The resume profile becomes a validated Adzuna search plan with
+                query terms, location, employment type, exclusions, and limits.
+              </span>
+            </article>
+            <article class="summary-card">
+              <strong>Fetch evidence</strong>
+              <span>
+                Each Adzuna result resolves to its final URL. The system extracts
+                full JD text before making any qualification decision.
+              </span>
+            </article>
+            <article class="summary-card">
+              <strong>Judge strictly</strong>
+              <span>
+                A fit judge compares structured resume evidence against
+                structured job requirements and only passes high-confidence fits.
+              </span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Top-level state machine</h2>
+            <p>
+              LangGraph orchestrates deterministic code and specialized LLM
+              nodes through shared state. The job evaluation step fans out across
+              many independent workers.
+            </p>
+          </div>
+
+          <div class="flow" aria-label="Top-level workflow">
+            <div class="flow-row">
+              <article class="flow-node">
+                <small>01</small>
+                <h3>Extract resume text</h3>
+                <p>Parse PDF, DOCX, or plain text into normalized resume text.</p>
+              </article>
+              <article class="flow-node">
+                <small>02</small>
+                <h3>Fingerprint resume</h3>
+                <p>Create stable file and text hashes with parser/schema versions.</p>
+              </article>
+              <article class="flow-node">
+                <small>03</small>
+                <h3>Load or parse profile</h3>
+                <p>Use cached resume profile when available; otherwise call the resume LLM.</p>
+              </article>
+              <article class="flow-node">
+                <small>04</small>
+                <h3>Plan Adzuna searches</h3>
+                <p>Translate the candidate profile into validated API search queries.</p>
+              </article>
+            </div>
+            <div class="flow-row">
+              <article class="flow-node">
+                <small>05</small>
+                <h3>Run Adzuna search</h3>
+                <p>Fetch pages of results, preserve source metadata, and capture URLs.</p>
+              </article>
+              <article class="flow-node">
+                <small>06</small>
+                <h3>Dedupe jobs</h3>
+                <p>Merge repeated listings by final URL, company, title, and location.</p>
+              </article>
+              <article class="flow-node">
+                <small>07</small>
+                <h3>Evaluate jobs</h3>
+                <p>Fan out workers that fetch full JDs, parse requirements, and judge fit.</p>
+              </article>
+              <article class="flow-node">
+                <small>08</small>
+                <h3>Aggregate matches</h3>
+                <p>Return only qualified jobs and keep failures for audit/debugging.</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Resume profile cache</h2>
+            <p>
+              The cache is application state, not just a LangGraph checkpoint.
+              Checkpoints resume graph runs; the resume cache avoids repeating
+              expensive semantic parsing across runs.
+            </p>
+          </div>
+
+          <div class="cache-lane">
+            <article class="lane-box">
+              <h3>Cache hit</h3>
+              <p>
+                Load the stored resume profile and continue straight to search
+                planning. The run records that the profile came from cache.
+              </p>
+            </article>
+            <div class="decision">Cached?</div>
+            <article class="lane-box">
+              <h3>Cache miss</h3>
+              <p>
+                Call the resume profiler LLM, validate the profile, store it with
+                versioned hashes, and continue with the new profile.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>LLM agents as graph nodes</h2>
+            <p>
+              Each LLM has one job, one schema, and one failure mode. This keeps
+              the workflow inspectable and makes it possible to debug why a job
+              passed or failed.
+            </p>
+          </div>
+
+          <div class="agents-grid">
+            <article class="agent-card">
+              <div class="agent-icon" aria-hidden="true">R</div>
+              <div>
+                <h3>Resume profiler</h3>
+                <p>
+                  Converts resume text into a candidate profile with roles,
+                  skills, seniority, experience, domains, authorization hints,
+                  locations, and claim-level evidence.
+                </p>
+                <ul>
+                  <li>Input: normalized resume text</li>
+                  <li>Output: <code>ResumeProfile</code></li>
+                  <li>Cached by text hash and parser version</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="agent-card">
+              <div class="agent-icon" aria-hidden="true">S</div>
+              <div>
+                <h3>Search planner</h3>
+                <p>
+                  Converts the resume profile into a bounded set of valid Adzuna
+                  API queries. It expands role synonyms but cannot invent
+                  unsupported API parameters.
+                </p>
+                <ul>
+                  <li>Input: <code>ResumeProfile</code></li>
+                  <li>Output: list of <code>AdzunaQuery</code></li>
+                  <li>Validated before API calls</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="agent-card">
+              <div class="agent-icon" aria-hidden="true">J</div>
+              <div>
+                <h3>JD requirement parser</h3>
+                <p>
+                  Reads full job-description text and extracts required skills,
+                  preferred skills, experience, education, location constraints,
+                  responsibilities, and dealbreakers.
+                </p>
+                <ul>
+                  <li>Input: extracted full JD text</li>
+                  <li>Output: <code>JobRequirements</code></li>
+                  <li>Runs only after text quality checks pass</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="agent-card">
+              <div class="agent-icon" aria-hidden="true">F</div>
+              <div>
+                <h3>Fit judge</h3>
+                <p>
+                  Compares resume evidence with parsed requirements and returns a
+                  strict decision: qualified, not qualified, or uncertain.
+                </p>
+                <ul>
+                  <li>Input: resume profile plus job requirements</li>
+                  <li>Output: <code>FitJudgment</code></li>
+                  <li>Must cite resume evidence for met requirements</li>
+                </ul>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Job evaluation subgraph</h2>
+            <p>
+              Once jobs are deduped, each one goes through the same evidence
+              pipeline. This is a strong candidate for a reusable LangGraph
+              subgraph.
+            </p>
+          </div>
+
+          <div class="subgraph" aria-label="Job evaluation subgraph">
+            <article class="subgraph-step">
+              <strong>Resolve URL</strong>
+              <span>Follow the Adzuna redirect and save the final canonical URL.</span>
+            </article>
+            <article class="subgraph-step">
+              <strong>Fetch page</strong>
+              <span>Retrieve static HTML or render the page when the content requires it.</span>
+            </article>
+            <article class="subgraph-step">
+              <strong>Extract JD</strong>
+              <span>Prefer ATS-specific parsers and JobPosting JSON-LD, then readable text.</span>
+            </article>
+            <article class="subgraph-step">
+              <strong>Parse requirements</strong>
+              <span>Use the JD parser LLM to produce structured requirements.</span>
+            </article>
+            <article class="subgraph-step">
+              <strong>Judge fit</strong>
+              <span>Compare candidate evidence against hard requirements and dealbreakers.</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Core state and schemas</h2>
+            <p>
+              The graph state tracks the run. The database stores durable resume
+              profiles and can also cache resolved job pages and parsed
+              requirements.
+            </p>
+          </div>
+
+          <div class="two-column">
+            <article class="schema-card">
+              <h3>LangGraph state</h3>
+              <pre><code>class JobMatchState(TypedDict):
+    resume_file_path: str
+    resume_text: str | None
+    resume_fingerprint: str | None
+    resume_profile_id: str | None
+    resume_profile: dict | None
+    resume_cache_hit: bool
+
+    search_plan: list[dict] | None
+    adzuna_results: list[dict]
+    deduped_jobs: list[dict]
+
+    evaluated_jobs: Annotated[list[dict], operator.add]
+    qualified_jobs: list[dict]
+    errors: Annotated[list[dict], operator.add]</code></pre>
+            </article>
+
+            <article class="schema-card">
+              <h3>Stored resume profile</h3>
+              <pre><code>type StoredResumeProfile = {
+  id: string;
+  userId: string;
+
+  fileHash: string;
+  textHash: string;
+  cacheKey: string;
+
+  profile: ResumeProfile;
+  parserVersion: string;
+  schemaVersion: string;
+  model: string;
+
+  createdAt: string;
+  updatedAt: string;
+};</code></pre>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Qualification rules</h2>
+            <p>
+              The final visible result set should be generated by normal code,
+              not by asking the LLM which jobs to show.
+            </p>
+          </div>
+
+          <div class="rules-grid">
+            <article class="rule-card">
+              <span class="rule-label">Required gate</span>
+              <h3>Full JD extraction</h3>
+              <ul>
+                <li>Resolved final URL exists</li>
+                <li>Extracted text passes length and noise checks</li>
+                <li>Requirement parser returns valid structured output</li>
+              </ul>
+            </article>
+
+            <article class="rule-card">
+              <span class="rule-label">Fit gate</span>
+              <h3>Evidence-backed match</h3>
+              <ul>
+                <li>No failed dealbreakers</li>
+                <li>No missing hard requirements</li>
+                <li>Resume evidence exists for each met requirement</li>
+              </ul>
+            </article>
+
+            <article class="rule-card">
+              <span class="rule-label">Confidence gate</span>
+              <h3>Strict display threshold</h3>
+              <ul>
+                <li><code>decision == "qualified"</code></li>
+                <li><code>confidence &gt;= 0.75</code></li>
+                <li>Uncertain and failed jobs stay out of the main feed</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="final-band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Implementation posture</h2>
+          </div>
+          <p>
+            <strong>Use LLMs for semantic interpretation, and use code for
+            control.</strong> LangGraph owns state transitions, retries,
+            fan-out, checkpointing, and aggregation. The LLM nodes produce
+            strict JSON only. The application layer validates every object,
+            applies thresholds, stores cache records, and explains each match
+            with traceable evidence.
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
