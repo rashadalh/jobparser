@@ -5,6 +5,7 @@ canonical ``LLM_NODES`` mapping (SPEC §6.3) is env-overridable per node.
 """
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
@@ -27,6 +28,11 @@ class JDParserError(Exception):
         self.code = code
         self.message = message
         super().__init__(f"{code}: {message}")
+
+
+def now_iso() -> str:
+    """ISO-8601 UTC timestamp (IMPLEMENTATION.md §conventions — Time)."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 # --- §6.1 Pipeline constants -------------------------------------------------
