@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>How We Cut Build Times in Half - Engineering Blog</title>
+</head>
+<body>
+  <header class="site-header">
+    <nav><a href="/">Home</a><a href="/blog">Blog</a><a href="/about">About</a></nav>
+  </header>
+  <main>
+    <article>
+      <h1>How We Cut Build Times in Half</h1>
+      <p class="byline">Posted by the Platform team</p>
+      <p>BLOG_BODY_MARKER Our continuous integration pipeline had grown slow and
+      flaky over three years of steady feature work. A clean build took close to
+      twenty minutes, and engineers were context switching away from their work
+      while they waited. We decided to treat build speed as a first-class
+      reliability problem and gave a small team a quarter to fix it.</p>
+      <p>The first win came from caching. We introduced a remote build cache keyed
+      on the content hash of every compilation input, so unchanged modules were
+      never rebuilt. That alone removed roughly a third of the wall-clock time on
+      a typical pull request, and it made repeated builds on the same branch
+      nearly instant.</p>
+      <p>The second win came from parallelism. We restructured the dependency graph
+      so that independent modules could compile concurrently across a pool of
+      workers. Combined with the cache, the median build dropped from nineteen
+      minutes to just under nine. Flaky integration tests were quarantined and
+      rewritten one by one until the suite was trustworthy again.</p>
+      <p>The lesson, for us, was that build speed is a product. Treating it with the
+      same rigor we apply to user-facing latency paid for itself within a single
+      quarter, and the team has guarded those numbers ever since.</p>
+    </article>
+  </main>
+  <footer>
+    <p>Copyright Example Engineering. All rights reserved.</p>
+  </footer>
+</body>
+</html>

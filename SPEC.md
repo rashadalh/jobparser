@@ -712,7 +712,7 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `ADZUNA_MAX_PAGES` | `3` | count; max pages per query (path param) |
 | `ADZUNA_DEFAULT_RESULTS_PER_PAGE` | `20` | count; schema default for `results_per_page` |
 | `ADZUNA_MAX_RESULTS_PER_PAGE` | `50` | count; Adzuna hard max (schema upper bound) |
-| `HTTP_USER_AGENT` | `"Mozilla/5.0 (compatible; jdparser/1.0; +https://example.local)"` | string; UA for httpx + Playwright fetches |
+| `HTTP_USER_AGENT` | `"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"` | string; UA for httpx + Playwright fetches. **Spec-corrected (was a `compatible; jdparser/1.0` polite-bot string):** Adzuna landing pages and many ATS bot-protections return **403** to a non-browser UA, which makes the JD-extraction flow (§7.5) impossible; a browser UA returns the full JobPosting JSON-LD. One UA constant for both fetch paths. |
 | `ADZUNA_COUNTRY` | `"us"` | Adzuna country code (MVP-fixed, §8/§9) |
 | `ADZUNA_BASE_URL` | `"https://api.adzuna.com/v1/api"` | URL base |
 | `EVAL_FANOUT_CONCURRENCY` | `8` | count; max concurrent job-eval workers |

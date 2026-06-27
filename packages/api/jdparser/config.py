@@ -40,7 +40,14 @@ SEARCH_PLAN_MAX_QUERIES: int = 6            # count; cap on planner output queri
 ADZUNA_MAX_PAGES: int = 3                   # count; max pages per query (path param)
 ADZUNA_DEFAULT_RESULTS_PER_PAGE: int = 20   # count; schema default for results_per_page
 ADZUNA_MAX_RESULTS_PER_PAGE: int = 50       # count; Adzuna hard max (schema upper bound)
-HTTP_USER_AGENT: str = "Mozilla/5.0 (compatible; jdparser/1.0; +https://example.local)"
+# A real browser UA. The original polite-bot string ("...compatible; jdparser/1.0...")
+# is 403'd by Adzuna's landing pages (and many ATS bot-protections), which makes the
+# core JD-extraction flow (SPEC §7.5) impossible. Empirically a browser UA returns the
+# full JobPosting JSON-LD. Spec-corrected per SPEC's "update this doc" preamble (§6.1).
+HTTP_USER_AGENT: str = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
 ADZUNA_COUNTRY: str = "us"                  # Adzuna country code (MVP-fixed, §8/§9)
 ADZUNA_BASE_URL: str = "https://api.adzuna.com/v1/api"
 EVAL_FANOUT_CONCURRENCY: int = 8            # count; max concurrent job-eval workers
