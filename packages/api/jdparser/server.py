@@ -20,17 +20,22 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.runnables import RunnableConfig
 
-from jdparser.cache.store import get_profile, list_profiles
+from jdparser.cache.fingerprint import compute_fingerprint
+from jdparser.cache.store import get_profile, list_profiles, put_profile
 from jdparser.config import (
     EVAL_FANOUT_CONCURRENCY,
+    MODEL_GLM,
     PARSER_VERSION,
     SCHEMA_VERSION,
     UPLOADS_DIR,
     JDParserError,
+    now_iso,
 )
 from jdparser.graph.build import build_graph
 from jdparser.graph.state import JobMatchState
-from jdparser.llm.schemas import RunRecord
+from jdparser.llm.resume_profiler import profile_resume
+from jdparser.llm.schemas import RunRecord, StoredResumeProfile
+from jdparser.resume.extract_text import extract_text
 from jdparser.runs.store import create_run, get_run, list_runs, update_run
 
 # Web origin allowed by CORS (dev default matches NEXT_PUBLIC_API_BASE peer, SPEC §6.2).
@@ -149,6 +154,43 @@ async def start_run(
     else:
         raise HTTPException(status_code=400, detail="provide a file or a profile_id")
     return {"run_id": run_id, "status": "pending"}
+
+
+@app.post("/api/parse")
+def parse_resume_endpoint(file: UploadFile = File(...)) -> StoredResumeProfile:
+    """Parse a resume into a profile WITHOUT running a job search — the profiler only.
+
+    Fast (no Adzuna search / per-job evaluation). The result is cached, so the resume
+    then appears in the reuse dropdown and a later run can search from it with no
+    re-parse. A resume already parsed under the current version returns instantly.
+    """
+    run_id = str(uuid4())  # name the saved upload
+    path = _save_upload(file, run_id)
+    try:
+        text = extract_text(path)
+        fp = compute_fingerprint(path, text)
+        existing = get_profile(fp.cache_key)
+        if existing is not None:
+            return existing  # already parsed under the current parser/schema version
+        profile = profile_resume(text)
+        rec = StoredResumeProfile(
+            id=str(uuid4()),
+            user_id="local",
+            file_hash=fp.file_hash,
+            text_hash=fp.text_hash,
+            cache_key=fp.cache_key,
+            profile=profile,
+            parser_version=PARSER_VERSION,
+            schema_version=SCHEMA_VERSION,
+            model=MODEL_GLM,
+            created_at=now_iso(),
+            updated_at=now_iso(),
+        )
+        put_profile(rec)
+        return rec
+    except JDParserError as e:
+        # resume errors (RESUME_UNSUPPORTED_TYPE / RESUME_EMPTY_TEXT) and LLM errors
+        raise HTTPException(status_code=400, detail=f"{e.code}: {e.message}")
 
 
 @app.get("/api/profiles")

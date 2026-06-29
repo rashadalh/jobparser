@@ -4,12 +4,17 @@ import { useState } from "react";
 
 export default function ResumeUpload({
   onSubmit,
+  onParse,
   disabled,
+  parsing,
 }: {
   onSubmit: (file: File) => void;
+  onParse: (file: File) => void;
   disabled: boolean;
+  parsing: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const busy = disabled || parsing;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -23,13 +28,24 @@ export default function ResumeUpload({
         <input
           type="file"
           accept=".pdf,.docx,.txt"
-          disabled={disabled}
+          disabled={busy}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="block w-full text-sm text-gray-700 file:mr-4 file:rounded-md file:border-0 file:bg-gray-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-700 disabled:opacity-50 file:disabled:bg-gray-400"
         />
         <button
           type="button"
-          disabled={disabled || !file}
+          disabled={busy || !file}
+          onClick={() => {
+            if (file) onParse(file);
+          }}
+          title="Parse the resume into a profile only — no job search"
+          className="shrink-0 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {parsing ? "Parsing…" : "Parse only"}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !file}
           onClick={() => {
             if (file) onSubmit(file);
           }}

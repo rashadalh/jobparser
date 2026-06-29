@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   startRun,
   startRunFromProfile,
+  parseResume,
   getRun,
   POLL_INTERVAL_MS,
   POLL_TIMEOUT_MS,
 } from "@/lib/api";
-import type { RunRecord } from "@/lib/types";
+import type { RunRecord, ResumeProfile } from "@/lib/types";
 import ResumeUpload from "@/components/ResumeUpload";
 import RunStatus from "@/components/RunStatus";
 import JobCard from "@/components/JobCard";
@@ -40,6 +41,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0); // bump to re-fetch saved resumes + run history
+  const [parsing, setParsing] = useState(false);
+  const [parsedProfile, setParsedProfile] = useState<ResumeProfile | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const deadlineRef = useRef<number>(0);
@@ -94,6 +97,7 @@ export default function Home() {
     setError(null);
     setTimedOut(false);
     setRun(null);
+    setParsedProfile(null);
     setPhase("starting");
     try {
       const { run_id } = await startRun(file);
@@ -105,12 +109,35 @@ export default function Home() {
     }
   }
 
+  // Parse a resume into a profile ONLY — no job search (fast). Caches it so it can
+  // then be reused for a search from the dropdown.
+  async function handleParse(file: File) {
+    stopPolling();
+    setError(null);
+    setTimedOut(false);
+    setRun(null);
+    setPhase("idle");
+    setParsedProfile(null);
+    setParsing(true);
+    try {
+      const stored = await parseResume(file);
+      setParsedProfile(stored.profile);
+      setRefreshKey((k) => k + 1); // now in the cache -> appears in the reuse dropdown
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to parse resume");
+      setPhase("error");
+    } finally {
+      setParsing(false);
+    }
+  }
+
   // Start a fresh run from an already-parsed resume (no upload, no re-parse).
   async function handleRunFromProfile(cacheKey: string) {
     stopPolling();
     setError(null);
     setTimedOut(false);
     setRun(null);
+    setParsedProfile(null);
     setPhase("starting");
     try {
       const { run_id } = await startRunFromProfile(cacheKey);
@@ -127,6 +154,7 @@ export default function Home() {
     stopPolling();
     setError(null);
     setTimedOut(false);
+    setParsedProfile(null);
     setPhase("starting");
     try {
       const rec = await getRun(runId);
@@ -161,14 +189,37 @@ export default function Home() {
 
   return (
     <Shell>
-      <ResumeUpload onSubmit={handleSubmit} disabled={active} />
+      <ResumeUpload
+        onSubmit={handleSubmit}
+        onParse={handleParse}
+        disabled={active}
+        parsing={parsing}
+      />
 
       <SavedPanel
         refreshKey={refreshKey}
-        disabled={active}
+        disabled={active || parsing}
         onRunFromProfile={handleRunFromProfile}
         onOpenRun={handleOpenRun}
       />
+
+      {parsing && (
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+          Parsing your resume… (no job search)
+        </div>
+      )}
+
+      {parsedProfile && !parsing && (
+        <section className="space-y-2">
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+            Resume parsed — <span className="font-medium">no job search run</span>. It&apos;s
+            saved; pick it under &ldquo;Reuse a previously parsed resume&rdquo; to search
+            without re-parsing.
+          </div>
+          <ResumeProfileView profile={parsedProfile} />
+        </section>
+      )}
 
       {phase === "error" && error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4">

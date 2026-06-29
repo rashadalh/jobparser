@@ -37,6 +37,10 @@ export interface ResumeProfile {
   remote_preference: string; employment_types: string[];
   evidence: ResumeEvidence[];
 }
+export interface StoredResumeProfile {
+  id: string; cache_key: string; profile: ResumeProfile;
+  model: string; created_at: string; updated_at: string;
+}
 export interface ProfileSummary {
   cache_key: string; id: string; created_at: string; updated_at: string;
   model: string; seniority: string; roles: string[]; education: string[];

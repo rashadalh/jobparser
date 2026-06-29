@@ -184,3 +184,36 @@ def test_run_from_unknown_profile_404(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_without_file_or_profile_400() -> None:
     resp = client.post("/api/runs")
     assert resp.status_code == 400
+
+
+def test_parse_only_returns_profile_without_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    from jdparser.llm.schemas import Fingerprint, ResumeProfile
+
+    prof = ResumeProfile(
+        roles=["backend engineer"], skills=["python"], seniority="senior",
+        total_years_experience=5.0, work_periods=[], education=["B.S. CS"], domains=[],
+        work_authorization=[], locations=[], remote_preference="any",
+        employment_types=["full_time"], evidence=[],
+    )
+    called = {"n": 0}
+
+    def _prof(_text: str) -> ResumeProfile:
+        called["n"] += 1
+        return prof
+
+    monkeypatch.setattr("jdparser.server._save_upload", lambda f, rid: "ignored.txt")
+    monkeypatch.setattr("jdparser.server.extract_text", lambda p: "x" * 500)
+    monkeypatch.setattr(
+        "jdparser.server.compute_fingerprint",
+        lambda p, t: Fingerprint(file_hash="fh", text_hash="th", cache_key="parse-test"),
+    )
+    monkeypatch.setattr("jdparser.server.get_profile", lambda key: None)  # cache miss -> parse
+    monkeypatch.setattr("jdparser.server.profile_resume", _prof)
+    monkeypatch.setattr("jdparser.server.put_profile", lambda rec: None)
+
+    resp = client.post("/api/parse", files={"file": ("r.txt", b"hello", "text/plain")})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["profile"]["roles"] == ["backend engineer"]
+    assert body["cache_key"] == "parse-test"
+    assert called["n"] == 1  # profiler ran once; no graph/search was invoked
