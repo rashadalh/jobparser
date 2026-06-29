@@ -21,7 +21,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.runnables import RunnableConfig
 
 from jdparser.cache.store import get_profile, list_profiles
-from jdparser.config import EVAL_FANOUT_CONCURRENCY, UPLOADS_DIR, JDParserError
+from jdparser.config import (
+    EVAL_FANOUT_CONCURRENCY,
+    PARSER_VERSION,
+    SCHEMA_VERSION,
+    UPLOADS_DIR,
+    JDParserError,
+)
 from jdparser.graph.build import build_graph
 from jdparser.graph.state import JobMatchState
 from jdparser.llm.schemas import RunRecord
@@ -147,7 +153,12 @@ async def start_run(
 
 @app.get("/api/profiles")
 def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summaries for the picker
-    """Previously parsed resumes (the cache/DB), newest first — for the reuse dropdown."""
+    """Previously parsed resumes (the cache/DB), newest first — for the reuse dropdown.
+
+    Only profiles produced by the CURRENT parser/schema versions are offered, so a
+    resume parsed with superseded logic isn't reused (it would serve stale results;
+    re-uploading re-parses it under the current version).
+    """
     return [
         {
             "cache_key": p.cache_key,  # used as profile_id when starting a run
@@ -160,6 +171,7 @@ def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summari
             "education": p.profile.education[:1],
         }
         for p in list_profiles()
+        if p.parser_version == PARSER_VERSION and p.schema_version == SCHEMA_VERSION
     ]
 
 

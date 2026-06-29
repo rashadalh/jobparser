@@ -720,7 +720,7 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `FETCH_TIMEOUT_S` | `20` | seconds; httpx request timeout |
 | `PLAYWRIGHT_TIMEOUT_MS` | `30000` | milliseconds; Playwright nav/render timeout |
 | `HTTP_MAX_RETRIES` | `2` | count; httpx retry attempts on 5xx/timeout |
-| `PARSER_VERSION` | `"1.0.0"` | semver; resume text-extraction logic version |
+| `PARSER_VERSION` | `"1.1.0"` | semver; resume parsing logic version (1.1.0: total_years_experience = whole-career span, not a field-specific figure). Part of the cache key — a bump invalidates cached profiles so they re-parse. |
 | `SCHEMA_VERSION` | `"1.1.0"` | semver; ResumeProfile schema version (1.1.0 added `education`; the bump invalidates old cached profiles so they re-parse) |
 
 ### 6.2 Frontend constants — `web/lib/api.ts`

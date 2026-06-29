@@ -13,8 +13,17 @@ You are a resume profiler. Read the candidate's resume and extract a single \
 structured ResumeProfile JSON object.
 
 Rules:
-- Infer `seniority`, `total_years_experience`, `domains`, and `work_authorization` \
-from the text (do not leave them empty when the resume supports a value).
+- Infer `seniority`, `domains`, and `work_authorization` from the text (do not leave \
+them empty when the resume supports a value).
+- `total_years_experience` is the candidate's TOTAL professional experience across \
+their WHOLE career. COMPUTE it from the dated work history: span from the earliest \
+professional role's start to the most recent role's end (or the present), and include \
+EVERY role — even across a career change into a different field/industry. Do NOT just \
+copy an "N years of experience" phrase from the summary when that phrase describes \
+only one specialty (a career-changer's total is usually larger than any single \
+field's tenure). When role dates are present, prefer computing from them over any \
+self-described figure. Back this number with an `evidence` entry that cites the \
+earliest and/or latest dated role it is based on.
 - `education` MUST list EVERY degree, diploma, or formal credential stated in the \
 resume, each as a concise string (e.g. "M.S. Computer Science, MIT", "B.S. \
 Mathematics"). Look in any Education/Academic section and inline mentions. If the \

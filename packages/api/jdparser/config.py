@@ -60,7 +60,7 @@ EVAL_FANOUT_CONCURRENCY: int = 8            # count; max concurrent job-eval wor
 FETCH_TIMEOUT_S: int = 20                   # seconds; httpx request timeout
 PLAYWRIGHT_TIMEOUT_MS: int = 30000          # milliseconds; Playwright nav/render timeout
 HTTP_MAX_RETRIES: int = 2                   # count; httpx retry attempts on 5xx/timeout
-PARSER_VERSION: str = "1.0.0"               # semver; resume text-extraction logic version
+PARSER_VERSION: str = "1.1.0"               # semver; resume parsing logic version (1.1.0: total-career years)
 SCHEMA_VERSION: str = "1.1.0"               # semver; ResumeProfile schema version (1.1.0: added `education`)
 
 # --- §6.3 LLM constants & model routing --------------------------------------
