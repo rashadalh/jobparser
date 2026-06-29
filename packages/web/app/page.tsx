@@ -12,6 +12,7 @@ import ResumeUpload from "@/components/ResumeUpload";
 import RunStatus from "@/components/RunStatus";
 import JobCard from "@/components/JobCard";
 import FailuresPanel from "@/components/FailuresPanel";
+import ResumeProfileView from "@/components/ResumeProfileView";
 
 type Phase = "idle" | "starting" | "polling" | "done" | "error";
 
@@ -135,6 +136,10 @@ export default function Home() {
           after {Math.round(POLL_TIMEOUT_MS / 1000)} seconds — it may still be
           running on the server. Try again later or re-upload.
         </div>
+      )}
+
+      {done && run && run.resume_profile && (
+        <ResumeProfileView profile={run.resume_profile} />
       )}
 
       {done && run && run.status === "completed" && (

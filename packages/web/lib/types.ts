@@ -24,10 +24,19 @@ export interface ErrorRecord {
   job_id: string | null; stage: string; code: string;
   message: string; detail: Record<string, unknown> | null;
 }
+export interface ResumeEvidence { claim: string; source_quote: string; }
+export interface ResumeProfile {
+  roles: string[]; skills: string[]; seniority: string;
+  total_years_experience: number; education: string[]; domains: string[];
+  work_authorization: string[]; locations: string[];
+  remote_preference: string; employment_types: string[];
+  evidence: ResumeEvidence[];
+}
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {
   run_id: string; user_id: string; status: RunStatus;
   created_at: string; updated_at: string; resume_cache_hit: boolean | null;
+  resume_profile: ResumeProfile | null;
   qualified_jobs: EvaluatedJob[]; failures: EvaluatedJob[];
   rejected: EvaluatedJob[]; errors: ErrorRecord[]; error: string | null;
 }

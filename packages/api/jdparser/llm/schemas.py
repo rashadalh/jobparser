@@ -184,6 +184,8 @@ class RunRecord(BaseModel):
     created_at: str
     updated_at: str
     resume_cache_hit: bool | None
+    # reason: heterogeneous JSON passthrough (ResumeProfile.model_dump(); §5.2)
+    resume_profile: dict[str, Any] | None = None  # what the profiler extracted (audit/transparency)
     # reason: heterogeneous JSON passthrough (SPEC §3.8.1/§5.2)
     qualified_jobs: list[dict[str, Any]]
     # reason: heterogeneous JSON passthrough (SPEC §3.8.1/§5.2)

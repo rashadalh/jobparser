@@ -92,6 +92,7 @@ def _execute(run_id: str, resume_path: str) -> None:
             run_id,
             status="completed",
             resume_cache_hit=final["resume_cache_hit"],
+            resume_profile=final.get("resume_profile"),
             qualified_jobs=final["qualified_jobs"],
             failures=[e for e in evaluated if e["status"] == "failed"],
             rejected=[e for e in evaluated if e["status"] in ("not_qualified", "uncertain")],
