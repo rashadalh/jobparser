@@ -1,4 +1,188 @@
-import type { EvaluatedJob, ErrorRecord } from "@/lib/types";
+import type { EvaluatedJob, ErrorRecord, JobRequirements } from "@/lib/types";
+
+// Plain-language explanation of each pipeline stage a job can fail at.
+const STAGE_EXPLAINER: Record<string, string> = {
+  resolve: "The job's redirect could not be resolved to a real employer URL.",
+  fetch: "The job page could not be fetched (blocked, timed out, or unreachable).",
+  extract: "No job description could be extracted from the page.",
+  quality: "The extracted description was too short or too noisy to evaluate.",
+  parse: "The description could not be parsed into structured requirements.",
+  judge: "The fit judgment failed schema validation.",
+};
+
+function JobLink({ url }: { url: string | null }) {
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-sm font-medium text-blue-600 hover:underline"
+    >
+      View job posting →
+    </a>
+  );
+}
+
+function Pills({ label, items }: { label: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="mt-2">
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        {label}
+      </span>
+      <ul className="mt-1 flex flex-wrap gap-1">
+        {items.map((it, i) => (
+          <li
+            key={i}
+            className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700"
+          >
+            {it}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ParsedRequirements({ req }: { req: JobRequirements | null }) {
+  if (!req) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        What the model read from the job description
+      </span>
+      <Pills label="Required skills" items={req.required_skills} />
+      <Pills label="Preferred skills" items={req.preferred_skills} />
+      <Pills label="Dealbreakers" items={req.dealbreakers} />
+      <p className="mt-2 text-xs text-gray-600">
+        Min experience:{" "}
+        {req.min_years_experience === null
+          ? "not stated"
+          : `${req.min_years_experience} yrs`}
+        {" · "}Education required: {req.education_required ? "yes" : "no"}
+        {req.remote_allowed !== null
+          ? ` · Remote allowed: ${req.remote_allowed ? "yes" : "no"}`
+          : ""}
+      </p>
+    </div>
+  );
+}
+
+/** A rejected job — the judge DID evaluate it; show its full reasoning. */
+function RejectedItem({ job }: { job: EvaluatedJob }) {
+  const j = job.judgment;
+  return (
+    <details
+      data-testid="audit-item"
+      className="rounded-lg border border-gray-100 px-3 py-2"
+    >
+      <summary className="cursor-pointer text-sm text-gray-700">
+        <span className="font-medium text-gray-900">{job.title}</span>
+        {job.company ? ` · ${job.company}` : ""}
+        {" — "}
+        <span className="text-gray-500">
+          {j?.decision ?? "—"}
+          {j ? ` (${Math.round(j.confidence * 100)}% confidence)` : ""}
+        </span>
+      </summary>
+
+      <div className="mt-3 space-y-1 border-l-2 border-gray-200 pl-3">
+        {j ? (
+          <>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Why this was {j.decision}
+              </span>
+              <p
+                data-testid="reasoning"
+                className="mt-1 text-sm italic text-gray-700"
+              >
+                “{j.rationale}”
+              </p>
+            </div>
+
+            <Pills
+              label="Missing required"
+              items={j.missing_hard_requirements}
+            />
+            <Pills label="Failed dealbreakers" items={j.failed_dealbreakers} />
+
+            {j.met_requirements.length > 0 && (
+              <div className="mt-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Requirements it did meet
+                </span>
+                <ul className="mt-1 space-y-1">
+                  {j.met_requirements.map((m, i) => (
+                    <li key={i} className="text-sm text-gray-700">
+                      <span className="font-medium">{m.requirement}</span>
+                      <span className="mt-0.5 block border-l-2 border-gray-200 pl-2 text-xs italic text-gray-500">
+                        “{m.evidence_quote}”
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-gray-500">No judgment recorded.</p>
+        )}
+
+        <ParsedRequirements req={job.requirements} />
+        <div className="mt-3">
+          <JobLink url={job.final_url} />
+        </div>
+      </div>
+    </details>
+  );
+}
+
+/** A failed job — it broke at a pipeline stage before/at evaluation. */
+function FailedItem({
+  job,
+  error,
+}: {
+  job: EvaluatedJob;
+  error: ErrorRecord | undefined;
+}) {
+  const stage = job.failure_stage ?? "unknown";
+  return (
+    <details
+      data-testid="audit-item"
+      className="rounded-lg border border-gray-100 px-3 py-2"
+    >
+      <summary className="cursor-pointer text-sm text-gray-700">
+        <span className="font-medium text-gray-900">{job.title}</span>
+        {job.company ? ` · ${job.company}` : ""}
+        {" — "}
+        <span className="text-gray-500">failed at {stage}</span>
+      </summary>
+
+      <div
+        data-testid="reasoning"
+        className="mt-3 space-y-2 border-l-2 border-gray-200 pl-3"
+      >
+        <p className="text-sm text-gray-700">{STAGE_EXPLAINER[stage] ?? ""}</p>
+        {error && (
+          <p className="text-sm text-gray-700">
+            <span className="font-mono text-xs text-gray-500">{error.code}</span>
+            {error.message && error.message !== error.code
+              ? ` — ${error.message}`
+              : ""}
+          </p>
+        )}
+        {job.jd_char_len !== null && (
+          <p className="text-xs text-gray-500">
+            Extracted description length: {job.jd_char_len} characters
+          </p>
+        )}
+        <JobLink url={job.final_url} />
+      </div>
+    </details>
+  );
+}
 
 export default function FailuresPanel({
   failures,
@@ -9,6 +193,10 @@ export default function FailuresPanel({
   rejected: EvaluatedJob[];
   errors: ErrorRecord[];
 }) {
+  // Correlate a failed job with its per-job ErrorRecord (code + message) by job_id.
+  const errByJob = new Map<string, ErrorRecord>();
+  for (const e of errors) if (e.job_id) errByJob.set(e.job_id, e);
+
   return (
     <details
       data-testid="failures-panel"
@@ -20,30 +208,9 @@ export default function FailuresPanel({
       </summary>
 
       <p className="mt-3 text-xs text-gray-500">
-        Results update by polling (no live stream); single local profile.
+        Results update by polling (no live stream); single local profile. Click any
+        row below to see the model&apos;s reasoning.
       </p>
-
-      <section className="mt-4">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Failed jobs ({failures.length})
-        </h4>
-        {failures.length === 0 ? (
-          <p className="mt-1 text-sm text-gray-400">None</p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {failures.map((f) => (
-              <li key={f.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{f.title}</span>
-                {f.company ? ` · ${f.company}` : ""}
-                {" — "}
-                <span className="text-gray-500">
-                  stage: {f.failure_stage ?? "unknown"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       <section className="mt-4">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -52,18 +219,10 @@ export default function FailuresPanel({
         {rejected.length === 0 ? (
           <p className="mt-1 text-sm text-gray-400">None</p>
         ) : (
-          <ul className="mt-2 space-y-1">
+          <ul className="mt-2 space-y-2">
             {rejected.map((r) => (
-              <li key={r.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{r.title}</span>
-                {r.company ? ` · ${r.company}` : ""}
-                {" — "}
-                <span className="text-gray-500">
-                  {r.judgment?.decision ?? "—"}
-                  {r.judgment
-                    ? ` (${Math.round(r.judgment.confidence * 100)}%)`
-                    : ""}
-                </span>
+              <li key={r.job_id}>
+                <RejectedItem job={r} />
               </li>
             ))}
           </ul>
@@ -72,7 +231,24 @@ export default function FailuresPanel({
 
       <section className="mt-4">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Errors ({errors.length})
+          Failed jobs ({failures.length})
+        </h4>
+        {failures.length === 0 ? (
+          <p className="mt-1 text-sm text-gray-400">None</p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {failures.map((f) => (
+              <li key={f.job_id}>
+                <FailedItem job={f} error={errByJob.get(f.job_id)} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-4">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          All errors ({errors.length})
         </h4>
         {errors.length === 0 ? (
           <p className="mt-1 text-sm text-gray-400">None</p>
@@ -83,8 +259,12 @@ export default function FailuresPanel({
                 <span className="font-mono text-xs text-gray-500">
                   {e.stage}/{e.code}
                 </span>
-                {" — "}
-                {e.message}
+                {e.message ? ` — ${e.message}` : ""}
+                {e.job_id ? (
+                  <span className="text-xs text-gray-400"> (job {e.job_id})</span>
+                ) : (
+                  <span className="text-xs text-gray-400"> (run-level)</span>
+                )}
               </li>
             ))}
           </ul>
