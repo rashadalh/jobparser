@@ -1,0 +1,14 @@
+# keep the build context small + never bake secrets/local state into the image
+.venv
+data
+tests
+.env
+.env.*
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+*.pyc
+Dockerfile
+.dockerignore

@@ -1,0 +1,38 @@
+# Resume-Driven Job Matcher — full stack.
+#   docker compose up --build
+#   then open http://localhost:3000
+#
+# Requires packages/api/.env to exist with OPENROUTER_API_KEY / ADZUNA_APP_ID /
+# ADZUNA_APP_KEY (copy packages/api/.env from .env.example). The web image bakes
+# NEXT_PUBLIC_API_BASE at build time, so rebuild the web image if you change the
+# API port/host the browser should reach.
+
+services:
+  api:
+    build:
+      context: ./packages/api
+    image: jdparser-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./packages/api/.env          # OPENROUTER_API_KEY, ADZUNA_APP_ID/KEY (gitignored)
+    environment:
+      WEB_ORIGIN: "http://localhost:3000"   # CORS allow-list for the browser origin
+    volumes:
+      - jdparser-data:/app/data       # persist resume cache + run records + uploads
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./packages/web
+      args:
+        NEXT_PUBLIC_API_BASE: "http://localhost:8000"  # browser -> host-mapped API port
+    image: jdparser-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  jdparser-data:

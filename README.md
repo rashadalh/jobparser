@@ -54,6 +54,27 @@ CLI (dev / verification):
 cd packages/api && uv run python -m jdparser path/to/resume.pdf
 ```
 
+### Docker
+
+The whole stack runs in containers (API image bundles Playwright + chromium; web
+image builds the Next app). You still need `packages/api/.env` with your keys.
+
+```bash
+cp .env.example packages/api/.env     # fill in OPENROUTER_API_KEY / ADZUNA_APP_ID / ADZUNA_APP_KEY
+docker compose up --build             # builds both images, starts api:8000 + web:3000
+# open http://localhost:3000
+```
+
+Notes:
+- `packages/api/.env` is passed to the API container via compose `env_file` (it is
+  never baked into the image). After changing a key, recreate the container so it is
+  re-read: `docker compose up -d --force-recreate api`.
+- `NEXT_PUBLIC_API_BASE` is inlined into the browser bundle at **build** time
+  (default `http://localhost:8000`); change the compose `build.args` and rebuild the
+  web image if the browser must reach the API at a different host/port.
+- The resume cache + run records persist in the named volume `jdparser-data`.
+- Tear down with `docker compose down` (add `-v` to also drop the data volume).
+
 ## Definition of done (how to confirm it works)
 
 1. Open http://localhost:3000 and upload a resume (PDF/DOCX/TXT).
