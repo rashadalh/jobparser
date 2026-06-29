@@ -218,11 +218,19 @@ class ResumeEvidence(BaseModel):
     source_quote: str    # verbatim span from the resume supporting `claim`
 
 
+class WorkPeriod(BaseModel):
+    title: str
+    organization: str
+    start_year: float            # decimal year: Jan 2018 -> 2018.0, Jul 2020 -> 2020.5
+    end_year: float | None = None  # null == ongoing ("Present")
+
+
 class ResumeProfile(BaseModel):
     roles: list[str]                       # normalized target roles + synonyms welcome
     skills: list[str]
     seniority: Seniority
-    total_years_experience: float
+    total_years_experience: float          # COMPUTED in code from work_periods (interval union); not LLM-estimated
+    work_periods: list[WorkPeriod]         # dated roles; jdparser/experience.py computes the years total
     education: list[str]                    # degrees/credentials, e.g. ["M.S. Computer Science", "B.S. ..."]
     domains: list[str]                     # e.g. ["fintech", "healthcare"]
     work_authorization: list[str]          # free-form hints, e.g. ["us_citizen", "needs_sponsorship"]
@@ -721,7 +729,7 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `PLAYWRIGHT_TIMEOUT_MS` | `30000` | milliseconds; Playwright nav/render timeout |
 | `HTTP_MAX_RETRIES` | `2` | count; httpx retry attempts on 5xx/timeout |
 | `PARSER_VERSION` | `"1.1.0"` | semver; resume parsing logic version (1.1.0: total_years_experience = whole-career span, not a field-specific figure). Part of the cache key — a bump invalidates cached profiles so they re-parse. |
-| `SCHEMA_VERSION` | `"1.1.0"` | semver; ResumeProfile schema version (1.1.0 added `education`; the bump invalidates old cached profiles so they re-parse) |
+| `SCHEMA_VERSION` | `"1.2.0"` | semver; ResumeProfile schema version (1.1.0 added `education`; 1.2.0 added `work_periods` for deterministic years). A bump invalidates cached profiles so they re-parse. |
 
 ### 6.2 Frontend constants — `web/lib/api.ts`
 

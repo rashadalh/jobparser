@@ -20,6 +20,7 @@ def _make_record(cache_key: str, created_at: str, updated_at: str) -> StoredResu
         skills=["Python", "Go"],
         seniority="senior",
         total_years_experience=8.0,
+        work_periods=[],
         education=["B.S. Computer Science"],
         domains=["fintech"],
         work_authorization=["us_citizen"],

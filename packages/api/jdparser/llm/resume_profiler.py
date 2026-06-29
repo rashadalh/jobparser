@@ -5,6 +5,7 @@ reasoning off. Maps validation failure -> PROFILE_INVALID (SPEC §6.4).
 """
 
 from jdparser.config import LLM_NODES, MAX_RESUME_CHARS
+from jdparser.experience import current_decimal_year, total_years_experience
 from jdparser.llm.client import _call
 from jdparser.llm.schemas import ResumeProfile
 
@@ -15,15 +16,16 @@ structured ResumeProfile JSON object.
 Rules:
 - Infer `seniority`, `domains`, and `work_authorization` from the text (do not leave \
 them empty when the resume supports a value).
-- `total_years_experience` is the candidate's TOTAL professional experience across \
-their WHOLE career. COMPUTE it from the dated work history: span from the earliest \
-professional role's start to the most recent role's end (or the present), and include \
-EVERY role — even across a career change into a different field/industry. Do NOT just \
-copy an "N years of experience" phrase from the summary when that phrase describes \
-only one specialty (a career-changer's total is usually larger than any single \
-field's tenure). When role dates are present, prefer computing from them over any \
-self-described figure. Back this number with an `evidence` entry that cites the \
-earliest and/or latest dated role it is based on.
+- `work_periods`: extract EVERY professional role with its dates as DECIMAL YEARS — \
+`start_year` and `end_year` (examples: "Jan 2018" -> 2018.0, "Jul 2020" -> 2020.5, a \
+year-only "2019" -> 2019.0). Use `end_year: null` for an ongoing/current role \
+("Present"). Include every role across the whole career, even concurrent/overlapping \
+ones and roles in a prior field before a career change. Be accurate and complete: the \
+system computes total experience from these dates, so missing or wrong dates skew it.
+- `total_years_experience`: give a rough estimate, but the system OVERWRITES it with a \
+deterministic interval-union of `work_periods` (overlapping roles count once; gaps \
+between jobs do not count) — so prioritise getting `work_periods` right over this \
+number.
 - `education` MUST list EVERY degree, diploma, or formal credential stated in the \
 resume, each as a concise string (e.g. "M.S. Computer Science, MIT", "B.S. \
 Mathematics"). Look in any Education/Academic section and inline mentions. If the \
@@ -44,4 +46,11 @@ If the text does not support a claim, omit it.
 
 def profile_resume(resume_text: str) -> ResumeProfile:
     user = resume_text[:MAX_RESUME_CHARS]
-    return _call(LLM_NODES["profiler"], _SYSTEM, user, ResumeProfile, "PROFILE_INVALID")
+    profile = _call(LLM_NODES["profiler"], _SYSTEM, user, ResumeProfile, "PROFILE_INVALID")
+    # Step 2 (deterministic): recompute total_years_experience from the extracted
+    # work_periods via interval union, overriding the LLM's estimate. Overlap- and
+    # gap-correct; no LLM arithmetic. (No periods -> keep the LLM's value as a fallback.)
+    if profile.work_periods:
+        computed = total_years_experience(profile.work_periods, current_decimal_year())
+        profile = profile.model_copy(update={"total_years_experience": computed})
+    return profile

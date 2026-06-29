@@ -88,6 +88,31 @@ export default function ResumeProfileView({
 
       <div className="mt-4">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Work history ({profile.total_years_experience} yrs total)
+        </span>
+        <p className="mt-0.5 text-xs text-gray-400">
+          Total years is computed in code from these dated roles (overlapping roles
+          counted once; gaps between jobs excluded) — not estimated by the model.
+        </p>
+        {profile.work_periods.length === 0 ? (
+          <p className="mt-1 text-sm text-gray-400">none extracted</p>
+        ) : (
+          <ul className="mt-1 space-y-1">
+            {profile.work_periods.map((w, i) => (
+              <li key={i} className="text-sm text-gray-700">
+                <span className="font-medium">{w.title}</span>
+                {w.organization ? ` · ${w.organization}` : ""}
+                <span className="text-gray-500">
+                  {" "}— {w.start_year} → {w.end_year ?? "present"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
           Evidence ({profile.evidence.length})
         </span>
         {profile.evidence.length === 0 ? (

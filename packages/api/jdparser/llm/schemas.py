@@ -28,11 +28,23 @@ class ResumeEvidence(BaseModel):
     source_quote: str
 
 
+class WorkPeriod(BaseModel):
+    """One dated professional role. Dates are DECIMAL YEARS (Jan 2018 -> 2018.0,
+    Jul 2020 -> 2020.5, "2019" -> 2019.0); ``end_year=None`` means ongoing ("Present").
+    `total_years_experience` is computed deterministically from these (interval union)."""
+
+    title: str
+    organization: str
+    start_year: float
+    end_year: float | None = None
+
+
 class ResumeProfile(BaseModel):
     roles: list[str]
     skills: list[str]
     seniority: Seniority
-    total_years_experience: float
+    total_years_experience: float          # COMPUTED in code from `work_periods` (interval union)
+    work_periods: list[WorkPeriod]         # dated roles the years total is computed from
     education: list[str]                    # degrees/credentials, e.g. ["M.S. Computer Science", "B.S. ..."]
     domains: list[str]
     work_authorization: list[str]

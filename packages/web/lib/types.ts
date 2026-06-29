@@ -25,9 +25,14 @@ export interface ErrorRecord {
   message: string; detail: Record<string, unknown> | null;
 }
 export interface ResumeEvidence { claim: string; source_quote: string; }
+export interface WorkPeriod {
+  title: string; organization: string;
+  start_year: number; end_year: number | null;
+}
 export interface ResumeProfile {
   roles: string[]; skills: string[]; seniority: string;
-  total_years_experience: number; education: string[]; domains: string[];
+  total_years_experience: number; work_periods: WorkPeriod[];
+  education: string[]; domains: string[];
   work_authorization: string[]; locations: string[];
   remote_preference: string; employment_types: string[];
   evidence: ResumeEvidence[];
