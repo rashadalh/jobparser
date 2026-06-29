@@ -29,7 +29,8 @@ fit) → qualified jobs. See `docs/system-overview.html`.
 cd packages/api
 uv sync
 uv run playwright install chromium    # REQUIRED — JS-render fallback needs it
-cp ../../.env.example ../../.env       # fill in keys
+# (Linux only) uv run playwright install-deps
+cp ../../.env.example .env             # -> packages/api/.env (config.py loads THIS path); fill in keys
 
 # Web (bun reads package.json + bun.lock)
 cd ../web
@@ -56,9 +57,10 @@ cd packages/api && uv run python -m jdparser path/to/resume.pdf
 ## Definition of done (how to confirm it works)
 
 1. Open http://localhost:3000 and upload a resume (PDF/DOCX/TXT).
-2. Wait for the run to complete; you should see ≥1 **qualified** job card with the
-   company, title, a link to the real job URL, and resume evidence cited for each
-   met requirement.
+2. Wait for the run to complete (a run takes ~2–3 min: a fan-out of live job pages
+   are fetched and judged by an LLM; the browser polls every 2s up to a 5-min
+   ceiling). You should see ≥1 **qualified** job card with the company, title, a link
+   to the real job URL, and resume evidence cited for each met requirement.
 3. Upload the **same** resume again — the run reports "loaded your profile from
    cache" (`resume_cache_hit = true`), skipping the profiler LLM call.
 4. Jobs whose description couldn't be extracted, or that the judge marked uncertain
