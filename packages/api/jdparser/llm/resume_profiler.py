@@ -15,6 +15,11 @@ structured ResumeProfile JSON object.
 Rules:
 - Infer `seniority`, `total_years_experience`, `domains`, and `work_authorization` \
 from the text (do not leave them empty when the resume supports a value).
+- `education` MUST list EVERY degree, diploma, or formal credential stated in the \
+resume, each as a concise string (e.g. "M.S. Computer Science, MIT", "B.S. \
+Mathematics"). Look in any Education/Academic section and inline mentions. If the \
+resume truly states no education, use an empty list — but do not overlook a degree \
+that is present.
 - `roles` are normalized target roles (synonyms welcome); `skills` are concrete, \
 named skills the resume actually demonstrates.
 - `remote_preference` and `employment_types` reflect stated or strongly implied \

@@ -46,6 +46,7 @@ def _profile() -> ResumeProfile:
         skills=["python", "distributed systems"],
         seniority="senior",
         total_years_experience=6.0,
+        education=["M.S. Computer Science"],
         domains=["fintech"],
         work_authorization=["us_citizen"],
         locations=["Austin, TX"],

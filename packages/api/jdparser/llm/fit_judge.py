@@ -36,6 +36,12 @@ it a good match — an over-qualified candidate does NOT qualify for that role.
 - For EACH required skill you count as met, add a `MetRequirement` whose \
 `evidence_quote` is a VERBATIM span from the candidate's resume evidence/skills \
 proving it — do not paraphrase or invent the quote.
+- EDUCATION: when the job's `education_required` is true, check the candidate's \
+`education` list (degrees/credentials). Treat the requirement as MET if the candidate \
+holds a degree at or above the level the job asks for (a higher degree satisfies a \
+lower requirement). Only put education in `missing_hard_requirements` if the \
+candidate's `education` list genuinely lacks an adequate degree — never treat a \
+populated `education` list as "no education provided".
 - List unmet required skills in `missing_hard_requirements` and failed explicit \
 hard filters in `failed_dealbreakers`.
 - Set `confidence` honestly in [0.0, 1.0] based on the strength of the evidence; do \

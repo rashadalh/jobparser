@@ -223,6 +223,7 @@ class ResumeProfile(BaseModel):
     skills: list[str]
     seniority: Seniority
     total_years_experience: float
+    education: list[str]                    # degrees/credentials, e.g. ["M.S. Computer Science", "B.S. ..."]
     domains: list[str]                     # e.g. ["fintech", "healthcare"]
     work_authorization: list[str]          # free-form hints, e.g. ["us_citizen", "needs_sponsorship"]
     locations: list[str]                   # preferred locations (human-readable)
@@ -720,7 +721,7 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `PLAYWRIGHT_TIMEOUT_MS` | `30000` | milliseconds; Playwright nav/render timeout |
 | `HTTP_MAX_RETRIES` | `2` | count; httpx retry attempts on 5xx/timeout |
 | `PARSER_VERSION` | `"1.0.0"` | semver; resume text-extraction logic version |
-| `SCHEMA_VERSION` | `"1.0.0"` | semver; ResumeProfile schema version |
+| `SCHEMA_VERSION` | `"1.1.0"` | semver; ResumeProfile schema version (1.1.0 added `education`; the bump invalidates old cached profiles so they re-parse) |
 
 ### 6.2 Frontend constants — `web/lib/api.ts`
 

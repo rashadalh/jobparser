@@ -33,6 +33,7 @@ class ResumeProfile(BaseModel):
     skills: list[str]
     seniority: Seniority
     total_years_experience: float
+    education: list[str]                    # degrees/credentials, e.g. ["M.S. Computer Science", "B.S. ..."]
     domains: list[str]
     work_authorization: list[str]
     locations: list[str]
