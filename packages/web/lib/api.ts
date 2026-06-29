@@ -15,11 +15,15 @@ export async function startRun(file: File): Promise<{ run_id: string }> {
   if (!r.ok) throw new Error(`start failed: ${r.status}`);
   return r.json();
 }
-// Start a run from an already-parsed resume (no upload, no re-parse).
+// Start a run from an already-parsed resume (no upload, no re-parse). `locations`,
+// when non-null, overrides the resume's inferred search locations for this run.
 export async function startRunFromProfile(
   cacheKey: string,
+  locations: string[] | null = null,
 ): Promise<{ run_id: string }> {
-  const fd = new FormData(); fd.append("profile_id", cacheKey);
+  const fd = new FormData();
+  fd.append("profile_id", cacheKey);
+  if (locations !== null) fd.append("locations", JSON.stringify(locations));
   const r = await fetch(`${BASE}/api/runs`, { method: "POST", body: fd });
   if (!r.ok) throw new Error(`start failed: ${r.status}`);
   return r.json();

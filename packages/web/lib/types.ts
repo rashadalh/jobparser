@@ -44,6 +44,7 @@ export interface StoredResumeProfile {
 export interface ProfileSummary {
   cache_key: string; id: string; created_at: string; updated_at: string;
   model: string; seniority: string; roles: string[]; education: string[];
+  locations: string[];
 }
 export interface RunSummary {
   run_id: string; status: RunStatus; created_at: string; updated_at: string;

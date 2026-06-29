@@ -104,10 +104,18 @@ def plan_searches(state: JobMatchState) -> NodeResult:
     raw_profile = state["resume_profile"]
     assert raw_profile is not None
     profile = ResumeProfile.model_validate(raw_profile)
+    out: NodeResult = {}
+    # Per-run location override: the user can expand/replace the inferred preferred
+    # locations for this search. `None` = use the resume's inferred locations.
+    locations = state.get("search_locations")
+    if locations is not None:
+        profile = profile.model_copy(update={"locations": locations})
+        out["resume_profile"] = profile.model_dump()  # the judge sees the chosen locations too
     plan = plan_adzuna_queries(profile)                 # llm/search_planner.py (GLM 5.2)
     if not plan:
         raise JDParserError(code="PLAN_EMPTY", message="planner produced no queries")
-    return {"search_plan": [q.model_dump() for q in plan]}
+    out["search_plan"] = [q.model_dump() for q in plan]
+    return out
 
 
 def run_adzuna_search(state: JobMatchState) -> NodeResult:

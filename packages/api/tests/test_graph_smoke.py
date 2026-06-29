@@ -220,6 +220,7 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
         "resume_profile_id": None,
         "resume_profile": None,
         "resume_cache_hit": False,
+        "search_locations": None,
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -386,3 +387,31 @@ def test_eval_count_mismatch_raises() -> None:
     with pytest.raises(JDParserError) as exc:
         aggregate_matches(state)  # type: ignore[arg-type]  # reason: partial JobMatchState for the unit
     assert exc.value.code == "EVAL_COUNT_MISMATCH"
+
+
+def test_search_locations_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """plan_searches replaces the profile's inferred locations with the per-run
+    override and updates the run profile (so the judge sees the chosen locations);
+    a None override leaves the inferred locations untouched."""
+    from jdparser.graph import nodes
+
+    captured: dict[str, list[str]] = {}
+
+    def _capture(profile: ResumeProfile) -> list[AdzunaQuery]:
+        captured["locations"] = list(profile.locations)
+        return [AdzunaQuery(what="engineer")]
+
+    monkeypatch.setattr("jdparser.graph.nodes.plan_adzuna_queries", _capture)
+
+    state = _initial_state([])
+    state["resume_profile"] = _profile().model_dump()
+    state["search_locations"] = ["New York", "Remote"]
+    out = nodes.plan_searches(state)
+    assert captured["locations"] == ["New York", "Remote"]              # override applied
+    assert out["resume_profile"]["locations"] == ["New York", "Remote"]  # judge sees them too
+
+    captured.clear()
+    state["search_locations"] = None
+    out2 = nodes.plan_searches(state)
+    assert captured["locations"] == ["Austin, TX"]   # inferred used
+    assert "resume_profile" not in out2              # not overwritten when no override

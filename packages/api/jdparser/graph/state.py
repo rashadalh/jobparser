@@ -34,6 +34,7 @@ class JobMatchState(TypedDict):
     resume_cache_hit: bool
 
     # --- discovery ---
+    search_locations: list[str] | None    # per-run location override (None = use profile's inferred)
     search_plan: list[_Json] | None       # list[AdzunaQuery.model_dump()]
     adzuna_results: list[_Json]           # raw Adzuna job dicts (§3.8.1)
     deduped_jobs: list[_Json]             # deduped raw Adzuna job dicts

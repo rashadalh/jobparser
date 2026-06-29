@@ -11,6 +11,7 @@ keys the in-memory checkpointer by ``thread_id == run_id`` and throttles the fan
 ``EVAL_FANOUT_CONCURRENCY`` (SPEC §6.1).
 """
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,7 @@ def _execute(
     resume_path: str = "",
     profile: dict[str, Any] | None = None,  # reason: ResumeProfile.model_dump() reused from cache/DB
     profile_id: str | None = None,
+    locations: list[str] | None = None,     # per-run location override (None = inferred)
 ) -> None:
     """Background task: drive the run from ``running`` to a terminal status (SPEC §3.10).
 
@@ -96,6 +98,7 @@ def _execute(
         "resume_profile_id": profile_id,
         "resume_profile": profile,            # pre-set -> resume stages pass through (no re-parse)
         "resume_cache_hit": profile is not None,
+        "search_locations": locations,        # user's location override for this run (or None)
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -131,13 +134,32 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _parse_locations(raw: str | None) -> list[str] | None:
+    """Decode the optional `locations` form field (a JSON array of strings).
+
+    None/empty string -> None (use the resume's inferred locations). A provided array
+    (even ``[]``, meaning nationwide) -> a cleaned list overriding the inferred ones.
+    """
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="locations must be a JSON array of strings")
+    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+        raise HTTPException(status_code=400, detail="locations must be a JSON array of strings")
+    return [s.strip() for s in value if s.strip()]
+
+
 @app.post("/api/runs", status_code=202)
 async def start_run(
     background: BackgroundTasks,
     file: UploadFile | None = File(None),
     profile_id: str | None = Form(None),  # cache_key of an already-parsed resume to reuse
+    locations: str | None = Form(None),   # JSON array of location strings (override inferred)
 ) -> dict[str, str]:
     run_id = str(uuid4())  # generate FIRST so the upload can be named by it
+    locs = _parse_locations(locations)
     if profile_id:
         # Reuse a previously parsed resume from the DB — no upload, no re-parse.
         stored = get_profile(profile_id)
@@ -145,12 +167,13 @@ async def start_run(
             raise HTTPException(status_code=404, detail="profile not found")
         create_run(run_id=run_id, user_id="local", resume_file_path="")
         background.add_task(
-            _execute, run_id, profile=stored.profile.model_dump(), profile_id=stored.id
+            _execute, run_id, profile=stored.profile.model_dump(), profile_id=stored.id,
+            locations=locs,
         )
     elif file is not None:
         path = _save_upload(file, run_id)  # -> data/uploads/{run_id}.{ext}
         create_run(run_id=run_id, user_id="local", resume_file_path=path)  # SPEC §8 fixed user
-        background.add_task(_execute, run_id, resume_path=path)
+        background.add_task(_execute, run_id, resume_path=path, locations=locs)
     else:
         raise HTTPException(status_code=400, detail="provide a file or a profile_id")
     return {"run_id": run_id, "status": "pending"}
@@ -211,6 +234,7 @@ def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summari
             "seniority": p.profile.seniority,
             "roles": p.profile.roles[:3],
             "education": p.profile.education[:1],
+            "locations": p.profile.locations,  # inferred preferred locations (editable pre-fill)
         }
         for p in list_profiles()
         if p.parser_version == PARSER_VERSION and p.schema_version == SCHEMA_VERSION
