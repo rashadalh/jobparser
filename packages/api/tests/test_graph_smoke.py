@@ -176,7 +176,9 @@ def _fake_parse(jd_text: str) -> JobRequirements:
     return req.model_copy(update={"required_skills": [outcome]})
 
 
-def _fake_judge(profile: ResumeProfile, requirements: JobRequirements) -> FitJudgment:
+def _fake_judge(
+    profile: ResumeProfile, requirements: JobRequirements, job_title: str = ""
+) -> FitJudgment:
     outcome = requirements.required_skills[0]
     if outcome == "qualified":
         return FitJudgment(

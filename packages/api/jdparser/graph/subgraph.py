@@ -183,7 +183,8 @@ def judge_fit_node(state: JobEvalState) -> NodeResult:
     try:
         profile = ResumeProfile.model_validate(state["profile"])    # injected via Send (SPEC §3.2)
         req = JobRequirements.model_validate(raw_req)
-        j = judge_fit(profile, req)                      # GLM 5.2
+        title = state["job"].get("title") or ""          # job title is the clearest seniority signal
+        j = judge_fit(profile, req, title)               # GLM 5.2
         return {"judgment": j.model_dump()}
     except JDParserError as e:
         return {"result": [_fail(state, "judge", e)]}
