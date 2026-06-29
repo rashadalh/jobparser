@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   startRun,
+  startRunFromProfile,
   getRun,
   POLL_INTERVAL_MS,
   POLL_TIMEOUT_MS,
@@ -13,6 +14,7 @@ import RunStatus from "@/components/RunStatus";
 import JobCard from "@/components/JobCard";
 import FailuresPanel from "@/components/FailuresPanel";
 import ResumeProfileView from "@/components/ResumeProfileView";
+import SavedPanel from "@/components/SavedPanel";
 
 type Phase = "idle" | "starting" | "polling" | "done" | "error";
 
@@ -37,6 +39,7 @@ export default function Home() {
   const [run, setRun] = useState<RunRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0); // bump to re-fetch saved resumes + run history
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const deadlineRef = useRef<number>(0);
@@ -71,6 +74,7 @@ export default function Home() {
         if (rec.status === "completed" || rec.status === "failed") {
           stopPolling();
           setPhase("done");
+          setRefreshKey((k) => k + 1); // new run (+ maybe new parsed profile) now in the DB
         }
       } catch (e) {
         stopPolling();
@@ -101,6 +105,44 @@ export default function Home() {
     }
   }
 
+  // Start a fresh run from an already-parsed resume (no upload, no re-parse).
+  async function handleRunFromProfile(cacheKey: string) {
+    stopPolling();
+    setError(null);
+    setTimedOut(false);
+    setRun(null);
+    setPhase("starting");
+    try {
+      const { run_id } = await startRunFromProfile(cacheKey);
+      setPhase("polling");
+      startPolling(run_id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to start run");
+      setPhase("error");
+    }
+  }
+
+  // Open a historical run from the DB and display it (poll only if still in flight).
+  async function handleOpenRun(runId: string) {
+    stopPolling();
+    setError(null);
+    setTimedOut(false);
+    setPhase("starting");
+    try {
+      const rec = await getRun(runId);
+      setRun(rec);
+      if (rec.status === "completed" || rec.status === "failed") {
+        setPhase("done");
+      } else {
+        setPhase("polling");
+        startPolling(runId);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to open run");
+      setPhase("error");
+    }
+  }
+
   // Stable skeleton until mounted — keeps client-only state (File, timers) off
   // the server render path.
   if (!mounted) {
@@ -120,6 +162,13 @@ export default function Home() {
   return (
     <Shell>
       <ResumeUpload onSubmit={handleSubmit} disabled={active} />
+
+      <SavedPanel
+        refreshKey={refreshKey}
+        disabled={active}
+        onRunFromProfile={handleRunFromProfile}
+        onOpenRun={handleOpenRun}
+      />
 
       {phase === "error" && error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4">

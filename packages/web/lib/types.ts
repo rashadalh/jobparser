@@ -32,6 +32,15 @@ export interface ResumeProfile {
   remote_preference: string; employment_types: string[];
   evidence: ResumeEvidence[];
 }
+export interface ProfileSummary {
+  cache_key: string; id: string; created_at: string; updated_at: string;
+  model: string; seniority: string; roles: string[]; education: string[];
+}
+export interface RunSummary {
+  run_id: string; status: RunStatus; created_at: string; updated_at: string;
+  qualified_count: number; rejected_count: number; failed_count: number;
+  roles: string[]; error: string | null;
+}
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {
   run_id: string; user_id: string; status: RunStatus;

@@ -45,11 +45,17 @@ NodeResult = dict[str, Any]
 
 
 def extract_resume_text(state: JobMatchState) -> NodeResult:
+    # Run started from an already-parsed profile (reused from the cache/DB) — skip the
+    # resume-extraction/parsing stages entirely (no re-parse). See server `_execute`.
+    if state.get("resume_profile") is not None:
+        return {}
     text = extract_text(state["resume_file_path"])     # resume/extract_text.py (fatal on failure)
     return {"resume_text": text}
 
 
 def fingerprint_resume(state: JobMatchState) -> NodeResult:
+    if state.get("resume_profile") is not None:
+        return {}                                      # pre-loaded profile: nothing to fingerprint
     text = state["resume_text"]
     assert text is not None  # set by extract_resume_text (prior node)
     fp = compute_fingerprint(state["resume_file_path"], text)
@@ -57,6 +63,8 @@ def fingerprint_resume(state: JobMatchState) -> NodeResult:
 
 
 def load_or_parse_profile(state: JobMatchState) -> NodeResult:
+    if state.get("resume_profile") is not None:
+        return {"resume_cache_hit": True}              # pre-loaded profile: reuse, never re-parse
     key = state["resume_fingerprint"]
     assert key is not None  # set by fingerprint_resume (prior node)
     existing = get_profile(key)                         # cache/store.py

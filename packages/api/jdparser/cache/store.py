@@ -20,6 +20,23 @@ def get_profile(cache_key: str) -> StoredResumeProfile | None:
     return StoredResumeProfile.model_validate_json(path.read_text(encoding="utf-8"))
 
 
+def list_profiles() -> list[StoredResumeProfile]:
+    """All cached resume profiles, newest-updated first.
+
+    A profile written under a prior ``SCHEMA_VERSION`` (e.g. before a field was added)
+    fails validation against the current schema; such stale files are skipped rather
+    than failing the whole listing — they are orphaned by the cache-key bump anyway.
+    """
+    out: list[StoredResumeProfile] = []
+    for path in PROFILES_DIR.glob("*.json"):
+        try:
+            out.append(StoredResumeProfile.model_validate_json(path.read_text(encoding="utf-8")))
+        except Exception:  # reason: skip a stale/partial cache file, don't fail the listing
+            continue
+    out.sort(key=lambda r: r.updated_at, reverse=True)
+    return out
+
+
 def put_profile(record: StoredResumeProfile) -> None:
     """Atomically write ``record`` to its ``cache_key`` slot (SPEC §3.7-lifecycle).
 

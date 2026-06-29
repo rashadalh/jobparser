@@ -13,17 +13,19 @@ keys the in-memory checkpointer by ``thread_id == run_id`` and throttles the fan
 
 import os
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.runnables import RunnableConfig
 
+from jdparser.cache.store import get_profile, list_profiles
 from jdparser.config import EVAL_FANOUT_CONCURRENCY, UPLOADS_DIR, JDParserError
 from jdparser.graph.build import build_graph
 from jdparser.graph.state import JobMatchState
 from jdparser.llm.schemas import RunRecord
-from jdparser.runs.store import create_run, get_run, update_run
+from jdparser.runs.store import create_run, get_run, list_runs, update_run
 
 # Web origin allowed by CORS (dev default matches NEXT_PUBLIC_API_BASE peer, SPEC §6.2).
 WEB_ORIGIN = os.getenv("WEB_ORIGIN", "http://localhost:3000")
@@ -55,8 +57,17 @@ def _save_upload(file: UploadFile, run_id: str) -> str:
     return str(path)
 
 
-def _execute(run_id: str, resume_path: str) -> None:
+def _execute(
+    run_id: str,
+    resume_path: str = "",
+    profile: dict[str, Any] | None = None,  # reason: ResumeProfile.model_dump() reused from cache/DB
+    profile_id: str | None = None,
+) -> None:
     """Background task: drive the run from ``running`` to a terminal status (SPEC §3.10).
+
+    Two start modes: from a freshly uploaded resume (``resume_path``), or from an
+    already-parsed profile reused from the cache/DB (``profile``) — the latter skips the
+    resume-extraction/parsing stages (no re-parse; the resume nodes pass through).
 
     On graph success the evaluated jobs are partitioned into the ``RunRecord`` audit
     buckets (``qualified_jobs`` / ``failures`` / ``rejected``) and non-fatal
@@ -71,9 +82,9 @@ def _execute(run_id: str, resume_path: str) -> None:
         "resume_file_path": resume_path,
         "resume_text": None,
         "resume_fingerprint": None,
-        "resume_profile_id": None,
-        "resume_profile": None,
-        "resume_cache_hit": False,
+        "resume_profile_id": profile_id,
+        "resume_profile": profile,            # pre-set -> resume stages pass through (no re-parse)
+        "resume_cache_hit": profile is not None,
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -112,13 +123,63 @@ def health() -> dict[str, str]:
 @app.post("/api/runs", status_code=202)
 async def start_run(
     background: BackgroundTasks,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    profile_id: str | None = Form(None),  # cache_key of an already-parsed resume to reuse
 ) -> dict[str, str]:
     run_id = str(uuid4())  # generate FIRST so the upload can be named by it
-    path = _save_upload(file, run_id)  # -> data/uploads/{run_id}.{ext}
-    create_run(run_id=run_id, user_id="local", resume_file_path=path)  # SPEC §8 fixed user
-    background.add_task(_execute, run_id, path)
+    if profile_id:
+        # Reuse a previously parsed resume from the DB — no upload, no re-parse.
+        stored = get_profile(profile_id)
+        if stored is None:
+            raise HTTPException(status_code=404, detail="profile not found")
+        create_run(run_id=run_id, user_id="local", resume_file_path="")
+        background.add_task(
+            _execute, run_id, profile=stored.profile.model_dump(), profile_id=stored.id
+        )
+    elif file is not None:
+        path = _save_upload(file, run_id)  # -> data/uploads/{run_id}.{ext}
+        create_run(run_id=run_id, user_id="local", resume_file_path=path)  # SPEC §8 fixed user
+        background.add_task(_execute, run_id, resume_path=path)
+    else:
+        raise HTTPException(status_code=400, detail="provide a file or a profile_id")
     return {"run_id": run_id, "status": "pending"}
+
+
+@app.get("/api/profiles")
+def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summaries for the picker
+    """Previously parsed resumes (the cache/DB), newest first — for the reuse dropdown."""
+    return [
+        {
+            "cache_key": p.cache_key,  # used as profile_id when starting a run
+            "id": p.id,
+            "created_at": p.created_at,
+            "updated_at": p.updated_at,
+            "model": p.model,
+            "seniority": p.profile.seniority,
+            "roles": p.profile.roles[:3],
+            "education": p.profile.education[:1],
+        }
+        for p in list_profiles()
+    ]
+
+
+@app.get("/api/runs")
+def list_runs_endpoint() -> list[dict[str, Any]]:  # reason: compact run-history summaries
+    """All historical runs, newest first (timestamped) — for the run-history view."""
+    return [
+        {
+            "run_id": r.run_id,
+            "status": r.status,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+            "qualified_count": len(r.qualified_jobs),
+            "rejected_count": len(r.rejected),
+            "failed_count": len(r.failures),
+            "roles": (r.resume_profile or {}).get("roles", [])[:2],
+            "error": r.error,
+        }
+        for r in list_runs()
+    ]
 
 
 @app.get("/api/runs/{run_id}")

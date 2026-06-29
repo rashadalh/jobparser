@@ -64,6 +64,19 @@ def get_run(run_id: str) -> RunRecord | None:
     return RunRecord.model_validate_json(path.read_text(encoding="utf-8"))
 
 
+def list_runs() -> list[RunRecord]:
+    """All run records, newest-created first (run history). Stale/partial files are
+    skipped rather than failing the whole listing."""
+    out: list[RunRecord] = []
+    for path in RUNS_DIR.glob("*.json"):
+        try:
+            out.append(RunRecord.model_validate_json(path.read_text(encoding="utf-8")))
+        except Exception:  # reason: skip a stale/partial record, don't fail the listing
+            continue
+    out.sort(key=lambda r: r.created_at, reverse=True)
+    return out
+
+
 # reason: heterogeneous RunRecord field updates (SPEC §5.2)
 def update_run(run_id: str, **fields: Any) -> RunRecord:
     """Atomic merge-write: load existing, overlay ``fields`` + a fresh ``updated_at``,

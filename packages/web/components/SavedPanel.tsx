@@ -1,0 +1,138 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { listProfiles, listRuns } from "@/lib/api";
+import type { ProfileSummary, RunSummary } from "@/lib/types";
+
+function profileLabel(p: ProfileSummary): string {
+  const role = p.roles[0] ?? "resume";
+  const edu = p.education[0] ? ` · ${p.education[0]}` : "";
+  return `${p.seniority} · ${role}${edu}`;
+}
+
+function fmtTime(iso: string): string {
+  // client-only component (rendered after mount), so locale formatting is hydration-safe
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  completed: "text-green-700",
+  failed: "text-red-700",
+  running: "text-blue-700",
+  pending: "text-gray-500",
+};
+
+export default function SavedPanel({
+  refreshKey,
+  disabled,
+  onRunFromProfile,
+  onOpenRun,
+}: {
+  refreshKey: number;
+  disabled: boolean;
+  onRunFromProfile: (cacheKey: string) => void;
+  onOpenRun: (runId: string) => void;
+}) {
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [selected, setSelected] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listProfiles(), listRuns()])
+      .then(([p, r]) => {
+        if (!cancelled) {
+          setProfiles(p);
+          setRuns(r);
+        }
+      })
+      .catch(() => {
+        /* best-effort: the panel just stays empty if the API is unreachable */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  if (profiles.length === 0 && runs.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {profiles.length > 0 && (
+        <div
+          data-testid="resume-picker"
+          className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+        >
+          <label className="text-sm font-medium text-gray-700">
+            Reuse a previously parsed resume{" "}
+            <span className="font-normal text-gray-500">
+              (no re-upload, no re-parse — runs a fresh job search)
+            </span>
+          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <select
+              value={selected}
+              disabled={disabled}
+              onChange={(e) => setSelected(e.target.value)}
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 disabled:opacity-50"
+            >
+              <option value="">Choose a saved resume…</option>
+              {profiles.map((p) => (
+                <option key={p.cache_key} value={p.cache_key}>
+                  {profileLabel(p)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!selected || disabled}
+              onClick={() => selected && onRunFromProfile(selected)}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              Find matching jobs
+            </button>
+          </div>
+        </div>
+      )}
+
+      {runs.length > 0 && (
+        <details
+          data-testid="run-history"
+          className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+        >
+          <summary className="cursor-pointer text-sm font-medium text-gray-700">
+            Run history ({runs.length})
+          </summary>
+          <ul className="mt-2 divide-y divide-gray-100">
+            {runs.map((r) => (
+              <li key={r.run_id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenRun(r.run_id)}
+                  className="flex w-full flex-wrap items-baseline gap-x-2 py-2 text-left text-sm hover:bg-gray-50"
+                >
+                  <span className="text-gray-500">{fmtTime(r.created_at)}</span>
+                  <span
+                    className={`font-medium ${STATUS_COLOR[r.status] ?? "text-gray-700"}`}
+                  >
+                    {r.status}
+                  </span>
+                  {r.status === "completed" && (
+                    <span className="text-gray-600">
+                      · {r.qualified_count} qualified · {r.rejected_count} rejected ·{" "}
+                      {r.failed_count} failed
+                    </span>
+                  )}
+                  {r.roles.length > 0 && (
+                    <span className="text-gray-400">· {r.roles.join(", ")}</span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}

@@ -165,3 +165,22 @@ def test_health() -> None:
     resp = client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+# --- 5. list endpoints + run-from-profile -------------------------------------
+def test_list_profiles_and_runs_return_lists() -> None:
+    p = client.get("/api/profiles")
+    r = client.get("/api/runs")
+    assert p.status_code == 200 and isinstance(p.json(), list)
+    assert r.status_code == 200 and isinstance(r.json(), list)
+
+
+def test_run_from_unknown_profile_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("jdparser.server.get_profile", lambda key: None)
+    resp = client.post("/api/runs", data={"profile_id": "does-not-exist"})
+    assert resp.status_code == 404
+
+
+def test_run_without_file_or_profile_400() -> None:
+    resp = client.post("/api/runs")
+    assert resp.status_code == 400
