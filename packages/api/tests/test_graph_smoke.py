@@ -427,6 +427,49 @@ def test_search_locations_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "resume_profile" not in out2              # not overwritten when no override
 
 
+def test_location_override_used_verbatim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit location override is applied VERBATIM as `where` (a state like "TX" is
+    NOT narrowed to a city), distance is cleared, and broaden adds one nationwide query."""
+    from jdparser.graph import nodes
+
+    def _planner(profile: ResumeProfile) -> list[AdzunaQuery]:
+        # planner "normalizes" to a city + emits a nationwide query
+        return [
+            AdzunaQuery(what="qa", where="Austin, TX", distance=30),
+            AdzunaQuery(what="qa analyst", where="Austin, TX"),
+            AdzunaQuery(what="software tester"),  # nationwide
+        ]
+
+    monkeypatch.setattr("jdparser.graph.nodes.plan_adzuna_queries", _planner)
+    state = _initial_state([])
+    state["resume_profile"] = _profile().model_dump()
+
+    state["search_locations"] = ["TX"]
+    state["broaden_search"] = True
+    plan = nodes.plan_searches(state)["search_plan"]
+    assert [q["where"] for q in plan] == ["TX", "TX", None]      # verbatim TX, +1 nationwide
+    assert all(q.get("distance") is None for q in plan)          # radius cleared for statewide
+
+    state["broaden_search"] = False                              # strict: no nationwide
+    plan2 = nodes.plan_searches(state)["search_plan"]
+    assert [q["where"] for q in plan2] == ["TX", "TX", "TX"]
+
+
+def test_location_override_remote_is_nationwide(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A purely-remote override searches nationwide (no bogus where="Remote")."""
+    from jdparser.graph import nodes
+
+    monkeypatch.setattr(
+        "jdparser.graph.nodes.plan_adzuna_queries",
+        lambda p: [AdzunaQuery(what="qa", where="Austin, TX"), AdzunaQuery(what="qa analyst")],
+    )
+    state = _initial_state([])
+    state["resume_profile"] = _profile().model_dump()
+    state["search_locations"] = ["Remote"]
+    plan = nodes.plan_searches(state)["search_plan"]
+    assert [q["where"] for q in plan] == [None, None]           # all nationwide
+
+
 def test_broaden_search_strict_drops_nationwide(monkeypatch: pytest.MonkeyPatch) -> None:
     """broaden_search=False drops the planner's nationwide (where-less) queries so the
     search stays within the chosen locations; broaden_search=True keeps them."""

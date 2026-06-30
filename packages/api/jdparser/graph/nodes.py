@@ -27,6 +27,7 @@ from jdparser.config import (
     PARSER_VERSION,
     SCHEMA_VERSION,
     SCREEN_EVAL_CAP,
+    SEARCH_PLAN_MAX_QUERIES,
     JDParserError,
     now_iso,
 )
@@ -102,11 +103,61 @@ def load_or_parse_profile(state: JobMatchState) -> NodeResult:
     }
 
 
+# A `where` value Adzuna can geocode is a real place; these mean "no place" (nationwide).
+_NON_GEO_LOCATIONS = frozenset(
+    {"remote", "anywhere", "nationwide", "us", "usa", "united states",
+     "remote (us)", "us remote", "remote us", "any"}
+)
+
+
+def _is_geographic(loc: str) -> bool:
+    return loc.strip().lower() not in _NON_GEO_LOCATIONS
+
+
+def _apply_location_override(
+    plan: list[AdzunaQuery], locations: list[str], broaden: bool
+) -> list[AdzunaQuery]:
+    """Honor an explicit per-run location override VERBATIM.
+
+    The planner LLM otherwise "normalizes" a user's location (e.g. narrows the whole
+    state "TX" to "Austin, TX"), defeating a broad search. So when the user supplies
+    locations we keep the planner's role-variety (`what`/`what_or`/`what_exclude`) but
+    deterministically reassign geography: each role query is scoped to the override's
+    GEOGRAPHIC values (used exactly as given, cycled), with `distance` cleared so a
+    state isn't shrunk to a radius. A remote/anywhere value (or `broaden=True`) adds one
+    nationwide (where-less) query. A purely-remote override makes every query nationwide.
+    """
+    geo = [loc for loc in locations if _is_geographic(loc)]
+    has_remote = any(not _is_geographic(loc) for loc in locations)
+    if not geo:                                          # purely remote -> all nationwide
+        return [q.model_copy(update={"where": None, "distance": None}) for q in plan]
+    keep_nationwide = broaden or has_remote
+    out: list[AdzunaQuery] = []
+    gi = 0                                               # cursor over the override's geo values
+    saw_nationwide = False
+    for q in plan:
+        if q.where:                                      # planner-scoped -> override geo verbatim
+            out.append(q.model_copy(update={"where": geo[gi % len(geo)], "distance": None}))
+            gi += 1
+        elif keep_nationwide:                            # planner-nationwide -> keep nationwide
+            out.append(q.model_copy(update={"where": None, "distance": None}))
+            saw_nationwide = True
+        else:                                            # strict -> pull nationwide into the geo
+            out.append(q.model_copy(update={"where": geo[gi % len(geo)], "distance": None}))
+            gi += 1
+    if keep_nationwide and not saw_nationwide:           # guarantee one nationwide query for breadth
+        out = out[: SEARCH_PLAN_MAX_QUERIES - 1] + [
+            plan[0].model_copy(update={"where": None, "distance": None})
+        ]
+    return out[:SEARCH_PLAN_MAX_QUERIES]
+
+
 def plan_searches(state: JobMatchState) -> NodeResult:
     raw_profile = state["resume_profile"]
     assert raw_profile is not None
     profile = ResumeProfile.model_validate(raw_profile)
     out: NodeResult = {}
+    broaden = state.get("broaden_search", True)
     # Per-run location override: the user can expand/replace the inferred preferred
     # locations for this search. `None` = use the resume's inferred locations.
     locations = state.get("search_locations")
@@ -116,9 +167,12 @@ def plan_searches(state: JobMatchState) -> NodeResult:
     plan = plan_adzuna_queries(profile)                 # llm/search_planner.py (gemini-3.1-flash-lite)
     if not plan:
         raise JDParserError(code="PLAN_EMPTY", message="planner produced no queries")
-    # Strict locations: drop the planner's nationwide (where-less) queries so the search
-    # stays within the chosen locations. Guarded so it never empties the plan.
-    if not state.get("broaden_search", True):
+    if locations:
+        # Apply the user's locations verbatim (the planner narrows states to cities otherwise).
+        plan = _apply_location_override(plan, locations, broaden)
+    elif not broaden:
+        # Strict locations: drop the planner's nationwide (where-less) queries so the search
+        # stays within the inferred locations. Guarded so it never empties the plan.
         located = [q for q in plan if q.where]
         if located:
             plan = located
