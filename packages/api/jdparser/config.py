@@ -57,6 +57,11 @@ HTTP_USER_AGENT: str = (
 ADZUNA_COUNTRY: str = "us"                  # Adzuna country code (MVP-fixed, §8/§9)
 ADZUNA_BASE_URL: str = "https://api.adzuna.com/v1/api"
 EVAL_FANOUT_CONCURRENCY: int = 8            # count; max concurrent job-eval workers
+# Bounded funnel: hard ceiling on how many screened jobs reach the expensive per-job
+# fan-out, so a wide search pull can't blow past the frontend poll timeout. The screen
+# RANKS by relevance and we keep the top N; the rest are recorded as screened_out
+# (reason "over_cap"). Applied even when the screen errors/returns junk (timeout guard).
+SCREEN_EVAL_CAP: int = int(os.getenv("SCREEN_EVAL_CAP", "80"))  # count; max jobs evaluated
 FETCH_TIMEOUT_S: int = 20                   # seconds; httpx request timeout
 PLAYWRIGHT_TIMEOUT_MS: int = 30000          # milliseconds; Playwright nav/render timeout
 HTTP_MAX_RETRIES: int = 2                   # count; httpx retry attempts on 5xx/timeout

@@ -53,6 +53,9 @@ export interface RunSummary {
 }
 export interface ScreenedJob {
   job_id: string; title: string; company: string; location: string;
+  // why it skipped evaluation: "off_field" (keyword collision, unrelated industry)
+  // or "over_cap" (in-field but past the per-run evaluation budget). Older runs omit it.
+  reason?: "off_field" | "over_cap";
 }
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {

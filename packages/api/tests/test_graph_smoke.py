@@ -474,6 +474,38 @@ def test_relevance_screen_keeps_all_when_it_would_empty(monkeypatch: pytest.Monk
     assert result["screened_out"] == []
 
 
+def test_screen_caps_eval_pool_to_top_n(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bounded funnel caps how many in-field jobs reach the fan-out, keeping the
+    screener's TOP-ranked survivors; the overflow lands in screened_out (over_cap)."""
+    monkeypatch.setattr("jdparser.graph.nodes.SCREEN_EVAL_CAP", 2)
+    jobs = [_job("qualified", i) for i in range(4)]
+
+    # screener ranks most-relevant-first (deliberately NOT the input order)
+    def _screen(profile: ResumeProfile, js: list[dict[str, Any]]) -> JobScreen:
+        return JobScreen(relevant_job_ids=["job-2", "job-3", "job-0", "job-1"])
+
+    result = run_graph(monkeypatch, jobs, screen=_screen)
+    assert len(result["evaluated_jobs"]) == 2                       # only the cap is evaluated
+    assert [j["job_id"] for j in result["evaluated_jobs"]] == ["job-2", "job-3"] or \
+        {j["job_id"] for j in result["evaluated_jobs"]} == {"job-2", "job-3"}  # top-2 by rank
+    over = result["screened_out"]
+    assert {j["job_id"] for j in over} == {"job-0", "job-1"}        # ranks 3-4 deferred
+    assert all(j["reason"] == "over_cap" for j in over)
+
+
+def test_screen_cap_applies_even_when_screen_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cap is the timeout guard, so it holds even on the screen-failure fallback."""
+    monkeypatch.setattr("jdparser.graph.nodes.SCREEN_EVAL_CAP", 2)
+    jobs = [_job("qualified", i) for i in range(4)]
+
+    def _boom(profile: ResumeProfile, js: list[dict[str, Any]]) -> JobScreen:
+        raise JDParserError(code="SCREEN_INVALID", message="boom")
+
+    result = run_graph(monkeypatch, jobs, screen=_boom)
+    assert len(result["evaluated_jobs"]) == 2                       # full pool, but still capped
+    assert any(e["stage"] == "screen" for e in result["errors"])   # failure recorded, run survives
+
+
 def test_relevance_screen_error_keeps_all(monkeypatch: pytest.MonkeyPatch) -> None:
     jobs = [_job("qualified", 0), _job("qualified", 1)]
 

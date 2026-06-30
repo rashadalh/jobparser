@@ -27,11 +27,17 @@ Tester", "QA Engineer"; DROP a food-safety "Product Safety Assurance" role at a 
 chain, a financial "Assurance" auditor role, or a theatrical "Lighting Designer" role — \
 those merely share a keyword. When genuinely unsure, KEEP the job (the later judge \
 assesses real fit). Return ONLY the ids of the jobs to keep, from the ids provided.
+
+ORDER MATTERS: return the kept ids RANKED most-relevant-first. The strongest matches to \
+the candidate's field, function, seniority, and skills go first; weaker-but-still-in-field \
+matches last. A downstream step may only have budget to evaluate the top N, so the best \
+candidates must come first.
 """
 
 
 def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
-    """Return the subset of ``jobs`` (by id) plausibly in the candidate's field."""
+    """Return the subset of ``jobs`` (by id) plausibly in the candidate's field,
+    RANKED most-relevant-first (the caller may cap to the top N — see SCREEN_EVAL_CAP)."""
     candidate = {
         "roles": profile.roles,
         "skills": profile.skills,

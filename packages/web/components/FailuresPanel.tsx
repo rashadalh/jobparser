@@ -204,6 +204,11 @@ export default function FailuresPanel({
   const errByJob = new Map<string, ErrorRecord>();
   for (const e of errors) if (e.job_id) errByJob.set(e.job_id, e);
 
+  // Split the screened-out jobs by WHY they skipped evaluation. Legacy runs (no
+  // `reason`) are treated as off-field, matching the prior single-bucket behavior.
+  const offField = screened.filter((s) => s.reason !== "over_cap");
+  const overCap = screened.filter((s) => s.reason === "over_cap");
+
   return (
     <details
       data-testid="failures-panel"
@@ -255,17 +260,17 @@ export default function FailuresPanel({
 
       <section className="mt-4">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Filtered as off-field ({screened.length})
+          Filtered as off-field ({offField.length})
         </h4>
         <p className="mt-0.5 text-xs text-gray-400">
           Dropped before evaluation as not in your field (a keyword match in an
           unrelated industry/role), to keep the feed and cost focused.
         </p>
-        {screened.length === 0 ? (
+        {offField.length === 0 ? (
           <p className="mt-1 text-sm text-gray-400">None</p>
         ) : (
           <ul className="mt-2 space-y-1">
-            {screened.map((s) => (
+            {offField.map((s) => (
               <li key={s.job_id} className="text-sm text-gray-700">
                 <span className="font-medium text-gray-900">{s.title}</span>
                 {s.company ? ` · ${s.company}` : ""}
@@ -279,6 +284,32 @@ export default function FailuresPanel({
           </ul>
         )}
       </section>
+
+      {overCap.length > 0 && (
+        <section className="mt-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            In-field, not evaluated ({overCap.length})
+          </h4>
+          <p className="mt-0.5 text-xs text-gray-400">
+            Relevant to your field but past this run&apos;s evaluation budget (the
+            top matches were evaluated first). Re-run or narrow the search to reach
+            these.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {overCap.map((s) => (
+              <li key={s.job_id} className="text-sm text-gray-700">
+                <span className="font-medium text-gray-900">{s.title}</span>
+                {s.company ? ` · ${s.company}` : ""}
+                {s.location ? (
+                  <span className="text-gray-500"> · {s.location}</span>
+                ) : (
+                  ""
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-4">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
