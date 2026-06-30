@@ -133,7 +133,11 @@ export default function Home() {
 
   // Start a fresh run from an already-parsed resume (no upload, no re-parse), with the
   // user's (possibly edited) search locations.
-  async function handleRunFromProfile(cacheKey: string, locations: string[]) {
+  async function handleRunFromProfile(
+    cacheKey: string,
+    locations: string[],
+    broaden: boolean,
+  ) {
     stopPolling();
     setError(null);
     setTimedOut(false);
@@ -141,7 +145,7 @@ export default function Home() {
     setParsedProfile(null);
     setPhase("starting");
     try {
-      const { run_id } = await startRunFromProfile(cacheKey, locations);
+      const { run_id } = await startRunFromProfile(cacheKey, locations, broaden);
       setPhase("polling");
       startPolling(run_id);
     } catch (e) {

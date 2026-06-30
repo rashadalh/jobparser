@@ -221,6 +221,7 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
         "resume_profile": None,
         "resume_cache_hit": False,
         "search_locations": None,
+        "broaden_search": True,
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -415,3 +416,24 @@ def test_search_locations_override(monkeypatch: pytest.MonkeyPatch) -> None:
     out2 = nodes.plan_searches(state)
     assert captured["locations"] == ["Austin, TX"]   # inferred used
     assert "resume_profile" not in out2              # not overwritten when no override
+
+
+def test_broaden_search_strict_drops_nationwide(monkeypatch: pytest.MonkeyPatch) -> None:
+    """broaden_search=False drops the planner's nationwide (where-less) queries so the
+    search stays within the chosen locations; broaden_search=True keeps them."""
+    from jdparser.graph import nodes
+
+    def _planner(profile: ResumeProfile) -> list[AdzunaQuery]:
+        return [AdzunaQuery(what="engineer", where="Seattle, WA"), AdzunaQuery(what="engineer")]
+
+    monkeypatch.setattr("jdparser.graph.nodes.plan_adzuna_queries", _planner)
+    state = _initial_state([])
+    state["resume_profile"] = _profile().model_dump()
+
+    state["broaden_search"] = True
+    out = nodes.plan_searches(state)
+    assert [q.get("where") for q in out["search_plan"]] == ["Seattle, WA", None]
+
+    state["broaden_search"] = False
+    out2 = nodes.plan_searches(state)
+    assert [q.get("where") for q in out2["search_plan"]] == ["Seattle, WA"]  # nationwide dropped

@@ -20,10 +20,12 @@ export async function startRun(file: File): Promise<{ run_id: string }> {
 export async function startRunFromProfile(
   cacheKey: string,
   locations: string[] | null = null,
+  broaden: boolean = true,
 ): Promise<{ run_id: string }> {
   const fd = new FormData();
   fd.append("profile_id", cacheKey);
   if (locations !== null) fd.append("locations", JSON.stringify(locations));
+  fd.append("broaden", String(broaden));
   const r = await fetch(`${BASE}/api/runs`, { method: "POST", body: fd });
   if (!r.ok) throw new Error(`start failed: ${r.status}`);
   return r.json();

@@ -114,6 +114,12 @@ def plan_searches(state: JobMatchState) -> NodeResult:
     plan = plan_adzuna_queries(profile)                 # llm/search_planner.py (GLM 5.2)
     if not plan:
         raise JDParserError(code="PLAN_EMPTY", message="planner produced no queries")
+    # Strict locations: drop the planner's nationwide (where-less) queries so the search
+    # stays within the chosen locations. Guarded so it never empties the plan.
+    if not state.get("broaden_search", True):
+        located = [q for q in plan if q.where]
+        if located:
+            plan = located
     out["search_plan"] = [q.model_dump() for q in plan]
     return out
 

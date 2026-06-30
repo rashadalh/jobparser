@@ -31,7 +31,11 @@ export default function SavedPanel({
 }: {
   refreshKey: number;
   disabled: boolean;
-  onRunFromProfile: (cacheKey: string, locations: string[]) => void;
+  onRunFromProfile: (
+    cacheKey: string,
+    locations: string[],
+    broaden: boolean,
+  ) => void;
   onOpenRun: (runId: string) => void;
 }) {
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
@@ -39,12 +43,14 @@ export default function SavedPanel({
   const [selected, setSelected] = useState<string>("");
   const [locations, setLocations] = useState<string[]>([]); // editable search locations
   const [locInput, setLocInput] = useState<string>("");
+  const [broaden, setBroaden] = useState<boolean>(true); // include nationwide results
 
   function selectProfile(key: string) {
     setSelected(key);
     const p = profiles.find((x) => x.cache_key === key);
     setLocations(p ? [...p.locations] : []); // pre-fill with the inferred locations
     setLocInput("");
+    setBroaden(true);
   }
   function addLocation() {
     const v = locInput.trim();
@@ -101,7 +107,7 @@ export default function SavedPanel({
             <button
               type="button"
               disabled={!selected || disabled}
-              onClick={() => selected && onRunFromProfile(selected, locations)}
+              onClick={() => selected && onRunFromProfile(selected, locations, broaden)}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               Find matching jobs
@@ -160,6 +166,20 @@ export default function SavedPanel({
                   Add
                 </button>
               </div>
+
+              <label className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={broaden}
+                  disabled={disabled}
+                  onChange={(e) => setBroaden(e.target.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                Include broader results (also search nationwide)
+                <span className="text-gray-400">
+                  — uncheck to restrict strictly to the locations above
+                </span>
+              </label>
             </div>
           )}
         </div>

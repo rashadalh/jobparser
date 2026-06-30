@@ -35,6 +35,7 @@ class JobMatchState(TypedDict):
 
     # --- discovery ---
     search_locations: list[str] | None    # per-run location override (None = use profile's inferred)
+    broaden_search: bool                  # True = keep the planner's nationwide query; False = strict locations
     search_plan: list[_Json] | None       # list[AdzunaQuery.model_dump()]
     adzuna_results: list[_Json]           # raw Adzuna job dicts (§3.8.1)
     deduped_jobs: list[_Json]             # deduped raw Adzuna job dicts
