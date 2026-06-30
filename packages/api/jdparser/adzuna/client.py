@@ -39,6 +39,8 @@ def _params(q: AdzunaQuery) -> dict[str, str | int]:
         "results_per_page": q.results_per_page,
         "what": q.what,
     }
+    if q.what_or:
+        p["what_or"] = q.what_or
     if q.what_exclude:
         p["what_exclude"] = q.what_exclude
     if q.where:

@@ -81,6 +81,7 @@ class AdzunaQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")  # planner MUST NOT invent params
 
     what: str
+    what_or: str | None = None     # OR keywords (any term) — Adzuna ANDs this group with `what`
     what_exclude: str | None = None
     where: str | None = None
     distance: int | None = None

@@ -32,6 +32,14 @@ Seniority and specific skills are judged later from the full job description.
 welcome), avoiding near-duplicate `what` values. Do NOT search roles from a PRIOR \
 career the candidate has clearly moved on from (e.g. an old "Lighting Designer" role \
 for someone now working in software QA) unless the resume signals it as a current target.
+- You MAY use `what_or` (matches ANY of its space-separated terms) on 1-2 queries to \
+cover several closely-related title synonyms at once — but SCOPE IT CAREFULLY. Adzuna \
+ANDs `what` with the `what_or` group, so ALWAYS pair `what_or` with an anchoring `what` \
+term (the core field token). Example for software QA: `what="qa"`, \
+`what_or="analyst engineer tester sdet"` → matches jobs containing "qa" AND any of \
+those. NEVER put generic words alone in `what_or` (e.g. "engineer", "analyst", \
+"manager", "automation", "quality", "developer") — without the `what` anchor they match \
+millions of unrelated jobs. Keep the other queries as plain `what` role variants.
 - `where` is a REAL geographic location ONLY (a US city/metro/state, e.g. "Austin, \
 TX"). NEVER put "Remote", "remote", "Anywhere", "Remote (US)", or any non-place \
 string in `where` — Adzuna returns ZERO results for a non-geographic `where`. If a \
@@ -39,10 +47,11 @@ location preference is remote/non-geographic, OMIT `where` entirely for that que
 (this performs a nationwide search). Set `distance` (km) only alongside a real `where`.
 - ALWAYS include at least one nationwide query (no `where` at all) so remote-friendly \
 candidates get broad coverage.
-- Keep the candidate pool tractable and high-signal: use `results_per_page` = 20 and \
-`pages` = 1 for each query (an LLM evaluates every returned job downstream, so a \
-focused pool beats a huge one). Produce EXACTLY 3 queries — a couple of role variants \
-plus at least one nationwide (no-`where`) query.
+- Use `results_per_page` = 50 and `pages` = 1 for each query. Produce 5-6 queries: \
+several distinct role variants across the candidate's field (some `where`-scoped, at \
+least one nationwide), optionally using `what_or` on 1-2 of them for synonym coverage. \
+A cheap relevance screen filters these before the expensive evaluation, so broader \
+title coverage is good — just keep each query in-field.
 - Set employment-type booleans (`full_time`, etc.) ONLY when the candidate clearly \
 signals one preferred type, and use them sparingly — they drop jobs Adzuna hasn't \
 tagged.
