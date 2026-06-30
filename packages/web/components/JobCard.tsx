@@ -3,6 +3,7 @@ import type { EvaluatedJob } from "@/lib/types";
 export default function JobCard({ job }: { job: EvaluatedJob }) {
   const j = job.judgment;
   const confidencePct = j ? Math.round(j.confidence * 100) : null;
+  const isAgency = job.is_recruitment_agency === true;
 
   return (
     <article
@@ -11,7 +12,18 @@ export default function JobCard({ job }: { job: EvaluatedJob }) {
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">{job.title}</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            {job.title}
+            {isAgency && (
+              <span
+                data-testid="agency-badge"
+                title="This posting appears to be from a third-party recruitment/staffing agency, not the direct employer."
+                className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-xs font-medium text-amber-800"
+              >
+                Agency
+              </span>
+            )}
+          </h3>
           <p className="mt-0.5 text-sm text-gray-600">
             {job.company}
             {job.location ? ` · ${job.location}` : ""}

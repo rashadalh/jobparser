@@ -213,33 +213,37 @@ def _screened_out_entry(j: dict[str, Any], reason: str) -> dict[str, Any]:
         "title": j.get("title", ""),
         "company": (j.get("company") or {}).get("display_name", ""),
         "location": (j.get("location") or {}).get("display_name", ""),
-        "reason": reason,  # "off_field" (dropped by screen) | "over_cap" (in-field, past eval budget)
+        # "off_field" | "agency" (recruitment agency, not opted in) | "over_cap" (past budget)
+        "reason": reason,
     }
 
 
 def screen_jobs(state: JobMatchState) -> NodeResult:
-    """Bounded funnel BEFORE the expensive fan-out (SPEC §4.1 + cost guard).
+    """Bounded relevance funnel BEFORE the expensive fan-out (SPEC §4.1 + cost guard).
 
-    Two jobs in one: (1) a coarse same-field relevance filter on the Adzuna
-    title+snippet that drops thematically-wrong jobs (keyword collisions like a
-    food-safety "Product Assurance" role for a software QA tester); (2) a hard
-    ``SCREEN_EVAL_CAP`` ceiling on how many survivors reach the per-job evaluation,
-    so a wide search pull can't blow past the frontend poll timeout. The screen
-    RANKS its survivors (most-relevant-first) and we keep the top N; the rest become
-    ``screened_out`` with reason ``over_cap``.
+    Three jobs in one, all on the cheap Adzuna title/company/snippet (no fetch):
+    (1) a coarse same-field filter dropping thematically-wrong jobs (keyword collisions
+    like a food-safety "Product Assurance" role for a software QA tester); (2) a
+    RECRUITMENT-AGENCY filter — agency postings are a second relevance dimension, NOT
+    relevant by default, so they are screened out (reason ``agency``) unless the run set
+    ``include_agencies``; (3) a hard ``SCREEN_EVAL_CAP`` ceiling so a wide pull can't blow
+    past the frontend poll timeout. Survivors are RANKED most-relevant-first (agencies, when
+    included, sink below direct employers so the budget fills with direct employers first).
 
-    Fault-tolerant: a screen failure, or a screen that would drop *everything*, falls
-    back to keeping the deduped pool — but the cap is ALWAYS applied as a final ceiling
-    (even on the fallback path), since the cap is the timeout guard, not the screen."""
+    Fault-tolerant: a screen failure, or a screen that would drop *everything*, falls back
+    to keeping the deduped pool — but the cap is ALWAYS applied as a final ceiling."""
     jobs = state["deduped_jobs"]
     raw_profile = state["resume_profile"]
     if not jobs or raw_profile is None:
         return {}
     profile = ResumeProfile.model_validate(raw_profile)
+    include_agencies = state.get("include_agencies", False)
     errors: list[dict[str, Any]] = []
+    agency_ids: set[str] = set()
     try:
         result = screen_relevance(profile, jobs)               # llm/screener.py (Gemini Flash Lite)
         ranked_ids = result.relevant_job_ids                   # most-relevant-first (screener contract)
+        agency_ids = set(result.agency_job_ids)
     except JDParserError as e:
         # never let the screen crash a run — fall back to the full pool (still capped below)
         errors.append(ErrorRecord(job_id=None, stage="screen", code=e.code, message=e.message).model_dump())
@@ -251,15 +255,30 @@ def screen_jobs(state: JobMatchState) -> NodeResult:
     relevant = {str(j.get("id")) for j in kept_relevant}
     off_field = [j for j in jobs if str(j.get("id")) not in relevant]
 
-    # Fallback: screen failed or dropped everything -> keep the original (deduped) pool,
-    # in its existing order, with no off-field entries to record.
-    ordered = kept_relevant if kept_relevant else jobs
-    dropped_off_field = off_field if kept_relevant else []
+    agency_excluded: list[dict[str, Any]] = []
+    if kept_relevant:
+        # Agency = a second relevance dimension: deprioritize to the tail (direct employers
+        # fill the eval budget first); drop entirely unless the run opted in.
+        directs = [j for j in kept_relevant if str(j.get("id")) not in agency_ids]
+        agencies = [j for j in kept_relevant if str(j.get("id")) in agency_ids]
+        ordered = directs + agencies if include_agencies else directs
+        if not include_agencies:
+            agency_excluded = agencies
+        dropped_off_field = off_field
+    else:
+        # Fallback: screen failed / dropped everything -> keep the deduped pool as-is.
+        ordered = jobs
+        dropped_off_field = []
 
     kept = ordered[:SCREEN_EVAL_CAP]
     over_cap = ordered[SCREEN_EVAL_CAP:]
+    # Tag kept agencies so the "Agency" badge rides through to the EvaluatedJob.
+    for j in kept:
+        if str(j.get("id")) in agency_ids:
+            j["is_recruitment_agency"] = True
     screened_out = (
         [_screened_out_entry(j, "off_field") for j in dropped_off_field]
+        + [_screened_out_entry(j, "agency") for j in agency_excluded]
         + [_screened_out_entry(j, "over_cap") for j in over_cap]
     )
     out: NodeResult = {"deduped_jobs": kept}

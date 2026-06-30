@@ -36,6 +36,7 @@ export default function SavedPanel({
     locations: string[],
     broaden: boolean,
     maxDaysOld: number,
+    includeAgencies: boolean,
   ) => void;
   onOpenRun: (runId: string) => void;
 }) {
@@ -46,6 +47,7 @@ export default function SavedPanel({
   const [locInput, setLocInput] = useState<string>("");
   const [broaden, setBroaden] = useState<boolean>(true); // include nationwide results
   const [maxDaysOld, setMaxDaysOld] = useState<number>(7); // listing-age cap in days (0 = any)
+  const [includeAgencies, setIncludeAgencies] = useState<boolean>(false); // recruitment agencies
 
   function selectProfile(key: string) {
     setSelected(key);
@@ -54,6 +56,7 @@ export default function SavedPanel({
     setLocInput("");
     setBroaden(true);
     setMaxDaysOld(7); // default: only listings from the past week
+    setIncludeAgencies(false); // default: recruitment agencies are screened out
   }
   function addLocation() {
     const v = locInput.trim();
@@ -110,7 +113,10 @@ export default function SavedPanel({
             <button
               type="button"
               disabled={!selected || disabled}
-              onClick={() => selected && onRunFromProfile(selected, locations, broaden, maxDaysOld)}
+              onClick={() =>
+                selected &&
+                onRunFromProfile(selected, locations, broaden, maxDaysOld, includeAgencies)
+              }
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               Find matching jobs
@@ -203,6 +209,20 @@ export default function SavedPanel({
                   <option value={0}>Any time</option>
                 </select>
                 <span className="text-gray-400">— defaults to the past week</span>
+              </label>
+
+              <label className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={includeAgencies}
+                  disabled={disabled}
+                  onChange={(e) => setIncludeAgencies(e.target.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                Include recruitment agencies
+                <span className="text-gray-400">
+                  — off by default; agency listings are screened out before evaluation
+                </span>
               </label>
             </div>
           )}

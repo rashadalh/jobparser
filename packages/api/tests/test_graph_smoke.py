@@ -178,7 +178,7 @@ def _fake_quality(text: str) -> QualityResult:
     return QualityResult(char_len=len(text), passed=True, reasons=[])
 
 
-def _fake_parse(jd_text: str) -> JobRequirements:
+def _fake_parse(jd_text: str, company: str = "") -> JobRequirements:
     outcome = jd_text.split("OUTCOME=", 1)[1].split("\n", 1)[0]
     req = _req()
     return req.model_copy(update={"required_skills": [outcome]})
@@ -229,6 +229,7 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
         "search_locations": None,
         "broaden_search": True,
         "max_days_old": None,
+        "include_agencies": False,
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -252,6 +253,7 @@ def run_graph(
     parse: Any = _fake_parse,
     judge: Any = _fake_judge,
     screen: Any = _fake_screen,
+    include_agencies: bool = False,
 ) -> dict[str, Any]:
     """Patch the whole pipeline (no network) and invoke the REAL graph."""
     # top-level nodes
@@ -280,6 +282,7 @@ def run_graph(
 
     graph = build_graph()
     state = _initial_state(jobs)
+    state["include_agencies"] = include_agencies
     config = {
         "max_concurrency": EVAL_FANOUT_CONCURRENCY,
         "configurable": {"thread_id": state["run_id"]},
@@ -329,7 +332,7 @@ def test_is_qualified_units() -> None:
 
 # --- §7.1: real-graph forced parse failure -----------------------------------
 def test_forced_parse_failure_real_graph(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(jd_text: str) -> JobRequirements:
+    def boom(jd_text: str, company: str = "") -> JobRequirements:
         raise JDParserError(code="PARSE_INVALID", message="bad json")
 
     result = run_graph(monkeypatch, [_job("qualified", 0)], parse=boom)
@@ -339,6 +342,35 @@ def test_forced_parse_failure_real_graph(monkeypatch: pytest.MonkeyPatch) -> Non
     assert ej["requirements"] is None
     assert result["qualified_jobs"] == []
     assert any(e["stage"] == "parse" and e["code"] == "PARSE_INVALID" for e in result["errors"])
+
+
+def test_recruitment_agency_screened_out_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Agency listings are a relevance dimension: screened out (never evaluated) by default,
+    landing in screened_out with reason 'agency'."""
+    jobs = [_job("qualified", 0), _job("qualified", 1)]
+
+    def _screen(profile: ResumeProfile, js: list[dict[str, Any]]) -> JobScreen:
+        return JobScreen(relevant_job_ids=["job-0", "job-1"], agency_job_ids=["job-1"])
+
+    result = run_graph(monkeypatch, jobs, screen=_screen)  # include_agencies defaults False
+    assert {j["job_id"] for j in result["evaluated_jobs"]} == {"job-0"}   # agency NOT evaluated
+    assert {j["job_id"] for j in result["qualified_jobs"]} == {"job-0"}
+    agency_out = [s for s in result["screened_out"] if s["reason"] == "agency"]
+    assert {s["job_id"] for s in agency_out} == {"job-1"}
+
+
+def test_recruitment_agency_included_and_badged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With include_agencies the agency listing IS evaluated and carries the badge flag
+    (is_recruitment_agency) through to its EvaluatedJob."""
+    jobs = [_job("qualified", 0), _job("qualified", 1)]
+
+    def _screen(profile: ResumeProfile, js: list[dict[str, Any]]) -> JobScreen:
+        return JobScreen(relevant_job_ids=["job-0", "job-1"], agency_job_ids=["job-1"])
+
+    result = run_graph(monkeypatch, jobs, screen=_screen, include_agencies=True)
+    assert {j["job_id"] for j in result["qualified_jobs"]} == {"job-0", "job-1"}  # both evaluated
+    flagged = {j["job_id"]: j["is_recruitment_agency"] for j in result["evaluated_jobs"]}
+    assert flagged == {"job-0": False, "job-1": True}  # only the agency is badged
 
 
 # --- §7.2: dealbreaker / missing-hard-requirement gate -----------------------

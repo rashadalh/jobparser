@@ -80,6 +80,7 @@ def _marker(s: JobEvalState, stage: FailureStage, code: str, msg: str) -> Marker
         judgment=FitJudgment.model_validate(raw_judg) if raw_judg else None,
         status="failed",
         failure_stage=stage,
+        is_recruitment_agency=bool(s["job"].get("is_recruitment_agency")),  # tagged at the screen
     )
     marker: Marker = ej.model_dump()
     marker["_code"] = code
@@ -123,6 +124,7 @@ def _evaluated_job(s: JobEvalState) -> NodeResult:
         judgment=judgment,
         status=_derive_status(judgment),
         failure_stage=None,
+        is_recruitment_agency=bool(s["job"].get("is_recruitment_agency")),  # tagged at the screen
     )
     return ej.model_dump()
 

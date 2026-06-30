@@ -32,12 +32,26 @@ ORDER MATTERS: return the kept ids RANKED most-relevant-first. The strongest mat
 the candidate's field, function, seniority, and skills go first; weaker-but-still-in-field \
 matches last. A downstream step may only have budget to evaluate the top N, so the best \
 candidates must come first.
+
+SEPARATELY, in `agency_job_ids`, list the ids (a SUBSET of the kept ids) that look like \
+THIRD-PARTY RECRUITMENT / STAFFING AGENCY postings — a recruiter placing the candidate at \
+a different client employer, rather than the employer hiring directly. Judge from the \
+company name and the snippet: signals include a known staffing/recruiting firm as the \
+company (e.g. Robert Half, Hays, Michael Page, Adecco, Randstad, Kelly, Aerotek, \
+TEKsystems, Insight Global, Robert Walters, Manpower) or snippet phrasing like "our \
+client", "on behalf of our client", "we are recruiting for", "acting as an employment \
+agency". A company hiring for ITSELF (including its own in-house recruiters, and \
+consultancies hiring their own staff) is NOT an agency. When unsure, do NOT list it. \
+Still keep these in `relevant_job_ids` if they are in-field; agency status is a separate \
+flag the caller applies.
 """
 
 
 def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
-    """Return the subset of ``jobs`` (by id) plausibly in the candidate's field,
-    RANKED most-relevant-first (the caller may cap to the top N — see SCREEN_EVAL_CAP)."""
+    """Coarse pre-screen over Adzuna title/company/snippet: the in-field ``jobs`` (by id)
+    RANKED most-relevant-first (caller caps to the top N — see SCREEN_EVAL_CAP), plus the
+    ``agency_job_ids`` subset that look like recruitment-agency postings (caller drops
+    those unless the run opted in)."""
     candidate = {
         "roles": profile.roles,
         "skills": profile.skills,

@@ -105,9 +105,13 @@ class SearchPlan(BaseModel):
 
 
 class JobScreen(BaseModel):
-    """Relevance pre-screen output: the job_ids plausibly in the candidate's field."""
+    """Relevance pre-screen output. ``relevant_job_ids`` are the in-field jobs ranked
+    most-relevant-first (the caller caps to the top N). ``agency_job_ids`` is the subset
+    of those that look like third-party recruitment/staffing-agency postings — a SECOND
+    relevance dimension: deprioritized (and screened out) unless the user includes them."""
 
     relevant_job_ids: list[str]
+    agency_job_ids: list[str] = []
 
 
 # --- §3.5 JobRequirements (text extraction — Gemini 3.1 Flash Lite) ----------
@@ -174,6 +178,9 @@ class EvaluatedJob(BaseModel):
     judgment: FitJudgment | None
     status: JobStatus
     failure_stage: FailureStage | None
+    # Set at the relevance screen (company + snippet); rides through for the UI "Agency"
+    # badge. Only ever true on included-agency runs (else agencies are screened out).
+    is_recruitment_agency: bool = False
 
 
 # --- §3.10 ErrorRecord -------------------------------------------------------

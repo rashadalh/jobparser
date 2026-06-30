@@ -12,7 +12,7 @@ import {
 import type { RunRecord, ResumeProfile } from "@/lib/types";
 import ResumeUpload from "@/components/ResumeUpload";
 import RunStatus from "@/components/RunStatus";
-import JobCard from "@/components/JobCard";
+import QualifiedJobs from "@/components/QualifiedJobs";
 import FailuresPanel from "@/components/FailuresPanel";
 import ResumeProfileView from "@/components/ResumeProfileView";
 import SavedPanel from "@/components/SavedPanel";
@@ -138,6 +138,7 @@ export default function Home() {
     locations: string[],
     broaden: boolean,
     maxDaysOld: number,
+    includeAgencies: boolean,
   ) {
     stopPolling();
     setError(null);
@@ -146,7 +147,13 @@ export default function Home() {
     setParsedProfile(null);
     setPhase("starting");
     try {
-      const { run_id } = await startRunFromProfile(cacheKey, locations, broaden, maxDaysOld);
+      const { run_id } = await startRunFromProfile(
+        cacheKey,
+        locations,
+        broaden,
+        maxDaysOld,
+        includeAgencies,
+      );
       setPhase("polling");
       startPolling(run_id);
     } catch (e) {
@@ -249,23 +256,7 @@ export default function Home() {
       )}
 
       {done && run && run.status === "completed" && (
-        <section>
-          <h2 className="mb-3 text-lg font-semibold text-gray-900">
-            Qualified jobs ({run.qualified_jobs.length})
-          </h2>
-          {run.qualified_jobs.length === 0 ? (
-            <p className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
-              No qualifying jobs found for this resume. See the audit panel below
-              for what was evaluated.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {run.qualified_jobs.map((job) => (
-                <JobCard key={job.job_id} job={job} />
-              ))}
-            </div>
-          )}
-        </section>
+        <QualifiedJobs jobs={run.qualified_jobs} />
       )}
 
       {done && run && (

@@ -78,6 +78,7 @@ def _execute(
     locations: list[str] | None = None,     # per-run location override (None = inferred)
     broaden: bool = True,                   # False = strict locations (drop nationwide query)
     max_days_old: int | None = SEARCH_MAX_DAYS_OLD_DEFAULT,  # listing-age cap in days (0/None = any)
+    include_agencies: bool = False,         # True = let recruitment-agency listings through the screen
 ) -> None:
     """Background task: drive the run from ``running`` to a terminal status (SPEC §3.10).
 
@@ -104,6 +105,7 @@ def _execute(
         "search_locations": locations,        # user's location override for this run (or None)
         "broaden_search": broaden,            # include the nationwide query unless strict
         "max_days_old": max_days_old,         # listing-age cap in days (0/None = any age)
+        "include_agencies": include_agencies, # let recruitment-agency listings past the screen
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -166,6 +168,7 @@ async def start_run(
     locations: str | None = Form(None),   # JSON array of location strings (override inferred)
     broaden: bool = Form(True),           # include broader (nationwide) results; False = strict
     max_days_old: int = Form(SEARCH_MAX_DAYS_OLD_DEFAULT),  # listing-age cap in days (0 = any age)
+    include_agencies: bool = Form(False),  # let recruitment-agency listings past the screen
 ) -> dict[str, str]:
     run_id = str(uuid4())  # generate FIRST so the upload can be named by it
     locs = _parse_locations(locations)
@@ -178,13 +181,14 @@ async def start_run(
         create_run(run_id=run_id, user_id="local", resume_file_path="")
         background.add_task(
             _execute, run_id, profile=stored.profile.model_dump(), profile_id=stored.id,
-            locations=locs, broaden=broaden, max_days_old=age,
+            locations=locs, broaden=broaden, max_days_old=age, include_agencies=include_agencies,
         )
     elif file is not None:
         path = _save_upload(file, run_id)  # -> data/uploads/{run_id}.{ext}
         create_run(run_id=run_id, user_id="local", resume_file_path=path)  # SPEC §8 fixed user
         background.add_task(
-            _execute, run_id, resume_path=path, locations=locs, broaden=broaden, max_days_old=age,
+            _execute, run_id, resume_path=path, locations=locs, broaden=broaden,
+            max_days_old=age, include_agencies=include_agencies,
         )
     else:
         raise HTTPException(status_code=400, detail="provide a file or a profile_id")

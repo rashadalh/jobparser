@@ -19,6 +19,8 @@ export interface EvaluatedJob {
   final_url: string | null; source: Record<string, unknown>;
   jd_char_len: number | null; requirements: JobRequirements | null;
   judgment: FitJudgment | null; status: JobStatus; failure_stage: string | null;
+  // flagged at the relevance screen; only true on runs that opted into agencies.
+  is_recruitment_agency?: boolean;
 }
 export interface ErrorRecord {
   job_id: string | null; stage: string; code: string;
@@ -53,9 +55,10 @@ export interface RunSummary {
 }
 export interface ScreenedJob {
   job_id: string; title: string; company: string; location: string;
-  // why it skipped evaluation: "off_field" (keyword collision, unrelated industry)
-  // or "over_cap" (in-field but past the per-run evaluation budget). Older runs omit it.
-  reason?: "off_field" | "over_cap";
+  // why it skipped evaluation: "off_field" (keyword collision, unrelated industry),
+  // "over_cap" (in-field but past the per-run evaluation budget), or "agency"
+  // (recruitment-agency listing, not opted in). Older runs omit it.
+  reason?: "off_field" | "over_cap" | "agency";
 }
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {

@@ -206,8 +206,11 @@ export default function FailuresPanel({
 
   // Split the screened-out jobs by WHY they skipped evaluation. Legacy runs (no
   // `reason`) are treated as off-field, matching the prior single-bucket behavior.
-  const offField = screened.filter((s) => s.reason !== "over_cap");
   const overCap = screened.filter((s) => s.reason === "over_cap");
+  const agency = screened.filter((s) => s.reason === "agency");
+  const offField = screened.filter(
+    (s) => s.reason !== "over_cap" && s.reason !== "agency",
+  );
 
   return (
     <details
@@ -297,6 +300,32 @@ export default function FailuresPanel({
           </p>
           <ul className="mt-2 space-y-1">
             {overCap.map((s) => (
+              <li key={s.job_id} className="text-sm text-gray-700">
+                <span className="font-medium text-gray-900">{s.title}</span>
+                {s.company ? ` · ${s.company}` : ""}
+                {s.location ? (
+                  <span className="text-gray-500"> · {s.location}</span>
+                ) : (
+                  ""
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {agency.length > 0 && (
+        <section className="mt-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Recruitment agencies, not evaluated ({agency.length})
+          </h4>
+          <p className="mt-0.5 text-xs text-gray-400">
+            In-field but screened out as third-party recruiter/staffing listings. Check
+            &ldquo;Include recruitment agencies&rdquo; in the search panel and re-run to
+            evaluate these.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {agency.map((s) => (
               <li key={s.job_id} className="text-sm text-gray-700">
                 <span className="font-medium text-gray-900">{s.title}</span>
                 {s.company ? ` · ${s.company}` : ""}
