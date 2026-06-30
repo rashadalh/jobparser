@@ -18,21 +18,31 @@ job's JobRequirements (all provided as JSON), decide whether the candidate quali
 and return one FitJudgment JSON object.
 
 Rules:
-- Set `decision="qualified"` ONLY if ALL of these hold: `failed_dealbreakers` is \
-empty, `missing_hard_requirements` is empty, AND the role's seniority level is \
-appropriate for the candidate (see SENIORITY FIT). Otherwise the decision is \
-"not_qualified" (or "uncertain" only when the evidence is genuinely ambiguous).
-- SENIORITY FIT (critical): infer the role's level from the job title and the \
-requirements (`min_years_experience`, required education, the overall skill bar) and \
-compare it to the candidate's `seniority` and `total_years_experience`. If the role \
-is clearly BELOW the candidate — an internship, co-op, apprenticeship, \
-new-grad/early-career, entry-level, or (for a mid/senior-or-above candidate) a junior \
-role — then the candidate is OVER-QUALIFIED and it is NOT an appropriate match: set \
-`decision="not_qualified"` and explain the level mismatch in `rationale`. A role far \
-ABOVE the candidate's demonstrated level (e.g. staff/principal/director for an \
-early-career candidate) is likewise not a fit. A modest one-level gap is acceptable. \
-IMPORTANT: trivially MEETING an entry-level role's minimal requirements does NOT make \
-it a good match — an over-qualified candidate does NOT qualify for that role.
+- Set `decision="qualified"` when `failed_dealbreakers` is empty, \
+`missing_hard_requirements` is empty, AND the role is not seniority-disqualified (see \
+SENIORITY FIT). Use "not_qualified" when a hard requirement is missing, a dealbreaker \
+fails, or the role is seniority-disqualified; use "uncertain" only when the evidence is \
+genuinely ambiguous.
+- SENIORITY FIT (asymmetric — read carefully): infer the role's level from the job title \
+and requirements (`min_years_experience`, required education, the overall skill bar) and \
+compare it to the candidate's `seniority` and `total_years_experience`.
+  • UNDER-qualified — the role is clearly ABOVE the candidate (e.g. staff/principal/ \
+director for an early-career candidate, or a `min_years_experience` the candidate does \
+not meet): NOT a fit → `decision="not_qualified"`, explain the gap.
+  • OVER-qualified — the candidate EXCEEDS the role's typical level: this is NOT a \
+disqualifier. The tool helps the candidate find jobs they can DO; whether a step-down is \
+worth applying to is THEIR choice, not yours. Reject for over-qualification ONLY when the \
+role is UNAMBIGUOUSLY entry-level BY ITS OWN LABEL — an internship, co-op, apprenticeship, \
+new-grad / early-career program, or a title/description explicitly marked "entry-level" \
+or "junior". In that narrow case set `decision="not_qualified"` and say so. For ANY normal \
+individual-contributor role (tester, analyst, specialist, coordinator, engineer) whose \
+hard requirements the candidate meets, exceeding its typical seniority is FINE → \
+`decision="qualified"`. Do NOT reject a normal IC role merely because the candidate has \
+more years or a "lead"/"senior" title than the role names.
+- JUDGE THE CURRENT PROFESSIONAL, NOT A PAST CAREER: assess fit from the candidate's \
+CURRENT / primary field and demonstrated skills. Do NOT hold an unrelated PRIOR career \
+they have moved on from against them (e.g. a former lighting designer now working in \
+software QA is a QA professional — judge the QA fit, not the lighting background).
 - For EACH required skill you count as met, add a `MetRequirement` whose \
 `evidence_quote` is a VERBATIM span from the candidate's resume evidence/skills \
 proving it — do not paraphrase or invent the quote.
