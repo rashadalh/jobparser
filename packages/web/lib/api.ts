@@ -17,15 +17,18 @@ export async function startRun(file: File): Promise<{ run_id: string }> {
 }
 // Start a run from an already-parsed resume (no upload, no re-parse). `locations`,
 // when non-null, overrides the resume's inferred search locations for this run.
+// `maxDaysOld` caps how old a listing may be (in days); 0 = any age.
 export async function startRunFromProfile(
   cacheKey: string,
   locations: string[] | null = null,
   broaden: boolean = true,
+  maxDaysOld: number = 7,
 ): Promise<{ run_id: string }> {
   const fd = new FormData();
   fd.append("profile_id", cacheKey);
   if (locations !== null) fd.append("locations", JSON.stringify(locations));
   fd.append("broaden", String(broaden));
+  fd.append("max_days_old", String(maxDaysOld));
   const r = await fetch(`${BASE}/api/runs`, { method: "POST", body: fd });
   if (!r.ok) throw new Error(`start failed: ${r.status}`);
   return r.json();

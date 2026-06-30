@@ -43,6 +43,7 @@ MIN_JD_CHARS: int = 600                     # characters; min extracted JD lengt
 MAX_JD_CHARS: int = 60000                   # characters; truncate JD before LLM (cost guard)
 JD_BOILERPLATE_MAX_RATIO: float = 0.40      # fraction; max nav/boilerplate share before quality fail
 SEARCH_PLAN_MAX_QUERIES: int = 6            # count; cap on planner output queries
+SEARCH_MAX_DAYS_OLD_DEFAULT: int = 7        # days; default listing-age filter (0 = any age)
 ADZUNA_MAX_PAGES: int = 3                   # count; max pages per query (path param)
 ADZUNA_DEFAULT_RESULTS_PER_PAGE: int = 20   # count; schema default for results_per_page
 ADZUNA_MAX_RESULTS_PER_PAGE: int = 50       # count; Adzuna hard max (schema upper bound)

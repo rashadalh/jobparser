@@ -228,6 +228,7 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
         "resume_cache_hit": False,
         "search_locations": None,
         "broaden_search": True,
+        "max_days_old": None,
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -453,6 +454,26 @@ def test_location_override_used_verbatim(monkeypatch: pytest.MonkeyPatch) -> Non
     state["broaden_search"] = False                              # strict: no nationwide
     plan2 = nodes.plan_searches(state)["search_plan"]
     assert [q["where"] for q in plan2] == ["TX", "TX", "TX"]
+
+
+def test_max_days_old_applied_to_every_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The listing-age filter is stamped on every query; 0/None clears it (any age)."""
+    from jdparser.graph import nodes
+
+    monkeypatch.setattr(
+        "jdparser.graph.nodes.plan_adzuna_queries",
+        lambda p: [AdzunaQuery(what="qa", max_days_old=99), AdzunaQuery(what="qa analyst")],
+    )
+    state = _initial_state([])
+    state["resume_profile"] = _profile().model_dump()
+
+    state["max_days_old"] = 7
+    plan = nodes.plan_searches(state)["search_plan"]
+    assert [q["max_days_old"] for q in plan] == [7, 7]          # stamped on all, overrides planner's 99
+
+    state["max_days_old"] = 0                                   # "any age" -> cleared everywhere
+    plan2 = nodes.plan_searches(state)["search_plan"]
+    assert [q["max_days_old"] for q in plan2] == [None, None]
 
 
 def test_location_override_remote_is_nationwide(monkeypatch: pytest.MonkeyPatch) -> None:

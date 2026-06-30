@@ -137,6 +137,7 @@ export default function Home() {
     cacheKey: string,
     locations: string[],
     broaden: boolean,
+    maxDaysOld: number,
   ) {
     stopPolling();
     setError(null);
@@ -145,7 +146,7 @@ export default function Home() {
     setParsedProfile(null);
     setPhase("starting");
     try {
-      const { run_id } = await startRunFromProfile(cacheKey, locations, broaden);
+      const { run_id } = await startRunFromProfile(cacheKey, locations, broaden, maxDaysOld);
       setPhase("polling");
       startPolling(run_id);
     } catch (e) {

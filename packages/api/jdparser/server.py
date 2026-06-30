@@ -28,6 +28,7 @@ from jdparser.config import (
     MODEL_LOGIC,
     PARSER_VERSION,
     SCHEMA_VERSION,
+    SEARCH_MAX_DAYS_OLD_DEFAULT,
     UPLOADS_DIR,
     JDParserError,
     now_iso,
@@ -76,6 +77,7 @@ def _execute(
     profile_id: str | None = None,
     locations: list[str] | None = None,     # per-run location override (None = inferred)
     broaden: bool = True,                   # False = strict locations (drop nationwide query)
+    max_days_old: int | None = SEARCH_MAX_DAYS_OLD_DEFAULT,  # listing-age cap in days (0/None = any)
 ) -> None:
     """Background task: drive the run from ``running`` to a terminal status (SPEC §3.10).
 
@@ -101,6 +103,7 @@ def _execute(
         "resume_cache_hit": profile is not None,
         "search_locations": locations,        # user's location override for this run (or None)
         "broaden_search": broaden,            # include the nationwide query unless strict
+        "max_days_old": max_days_old,         # listing-age cap in days (0/None = any age)
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
@@ -162,9 +165,11 @@ async def start_run(
     profile_id: str | None = Form(None),  # cache_key of an already-parsed resume to reuse
     locations: str | None = Form(None),   # JSON array of location strings (override inferred)
     broaden: bool = Form(True),           # include broader (nationwide) results; False = strict
+    max_days_old: int = Form(SEARCH_MAX_DAYS_OLD_DEFAULT),  # listing-age cap in days (0 = any age)
 ) -> dict[str, str]:
     run_id = str(uuid4())  # generate FIRST so the upload can be named by it
     locs = _parse_locations(locations)
+    age = max(0, max_days_old)            # clamp; 0 => any age (no filter)
     if profile_id:
         # Reuse a previously parsed resume from the DB — no upload, no re-parse.
         stored = get_profile(profile_id)
@@ -173,12 +178,14 @@ async def start_run(
         create_run(run_id=run_id, user_id="local", resume_file_path="")
         background.add_task(
             _execute, run_id, profile=stored.profile.model_dump(), profile_id=stored.id,
-            locations=locs, broaden=broaden,
+            locations=locs, broaden=broaden, max_days_old=age,
         )
     elif file is not None:
         path = _save_upload(file, run_id)  # -> data/uploads/{run_id}.{ext}
         create_run(run_id=run_id, user_id="local", resume_file_path=path)  # SPEC §8 fixed user
-        background.add_task(_execute, run_id, resume_path=path, locations=locs, broaden=broaden)
+        background.add_task(
+            _execute, run_id, resume_path=path, locations=locs, broaden=broaden, max_days_old=age,
+        )
     else:
         raise HTTPException(status_code=400, detail="provide a file or a profile_id")
     return {"run_id": run_id, "status": "pending"}

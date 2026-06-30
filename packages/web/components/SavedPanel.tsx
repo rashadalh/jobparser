@@ -35,6 +35,7 @@ export default function SavedPanel({
     cacheKey: string,
     locations: string[],
     broaden: boolean,
+    maxDaysOld: number,
   ) => void;
   onOpenRun: (runId: string) => void;
 }) {
@@ -44,6 +45,7 @@ export default function SavedPanel({
   const [locations, setLocations] = useState<string[]>([]); // editable search locations
   const [locInput, setLocInput] = useState<string>("");
   const [broaden, setBroaden] = useState<boolean>(true); // include nationwide results
+  const [maxDaysOld, setMaxDaysOld] = useState<number>(7); // listing-age cap in days (0 = any)
 
   function selectProfile(key: string) {
     setSelected(key);
@@ -51,6 +53,7 @@ export default function SavedPanel({
     setLocations(p ? [...p.locations] : []); // pre-fill with the inferred locations
     setLocInput("");
     setBroaden(true);
+    setMaxDaysOld(7); // default: only listings from the past week
   }
   function addLocation() {
     const v = locInput.trim();
@@ -107,7 +110,7 @@ export default function SavedPanel({
             <button
               type="button"
               disabled={!selected || disabled}
-              onClick={() => selected && onRunFromProfile(selected, locations, broaden)}
+              onClick={() => selected && onRunFromProfile(selected, locations, broaden, maxDaysOld)}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               Find matching jobs
@@ -179,6 +182,27 @@ export default function SavedPanel({
                 <span className="text-gray-400">
                   — uncheck to restrict strictly to the locations above
                 </span>
+              </label>
+
+              <label
+                data-testid="age-filter"
+                className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600"
+              >
+                Posted within
+                <select
+                  value={maxDaysOld}
+                  disabled={disabled}
+                  onChange={(e) => setMaxDaysOld(Number(e.target.value))}
+                  className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+                >
+                  <option value={1}>24 hours</option>
+                  <option value={3}>3 days</option>
+                  <option value={7}>1 week</option>
+                  <option value={14}>2 weeks</option>
+                  <option value={30}>1 month</option>
+                  <option value={0}>Any time</option>
+                </select>
+                <span className="text-gray-400">— defaults to the past week</span>
               </label>
             </div>
           )}

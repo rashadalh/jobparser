@@ -176,6 +176,11 @@ def plan_searches(state: JobMatchState) -> NodeResult:
         located = [q for q in plan if q.where]
         if located:
             plan = located
+    # Listing-age filter (user-controlled, deterministic): a positive value caps how old a
+    # posting may be; None / <= 0 means "any age" (cleared so the planner can't re-add one).
+    mdo = state.get("max_days_old")
+    age = mdo if (mdo and mdo > 0) else None
+    plan = [q.model_copy(update={"max_days_old": age}) for q in plan]
     out["search_plan"] = [q.model_dump() for q in plan]
     return out
 
