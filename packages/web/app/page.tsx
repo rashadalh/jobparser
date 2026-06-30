@@ -272,6 +272,7 @@ export default function Home() {
           failures={run.failures}
           rejected={run.rejected}
           errors={run.errors}
+          screened={run.screened_out ?? []}
         />
       )}
     </Shell>

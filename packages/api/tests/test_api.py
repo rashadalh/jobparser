@@ -61,6 +61,7 @@ def _final_state() -> dict[str, Any]:
         "qualified_jobs": [_QUALIFIED],
         "evaluated_jobs": [_QUALIFIED, _FAILED, _REJECTED],
         "errors": [_ADZUNA_ERROR],
+        "screened_out": [{"job_id": "x", "title": "Grocery QA", "company": "Mart", "location": "TX"}],
     }
 
 
@@ -119,6 +120,7 @@ def test_post_run_completes_and_partitions(
     assert rec["status"] == "completed"
     assert rec["resume_cache_hit"] is False
     assert rec["resume_profile"] == {"roles": ["backend engineer"], "education": ["B.S. CS"]}
+    assert [s["title"] for s in rec["screened_out"]] == ["Grocery QA"]
 
     assert [j["job_id"] for j in rec["qualified_jobs"]] == ["job-q"]
     assert all(j["status"] == "qualified" for j in rec["qualified_jobs"])

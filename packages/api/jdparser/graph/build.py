@@ -22,6 +22,7 @@ from jdparser.graph.nodes import (
     aggregate_matches,
     dedupe_jobs,
     evaluate_jobs,
+    screen_jobs,
     extract_resume_text,
     fingerprint_resume,
     load_or_parse_profile,
@@ -83,6 +84,7 @@ def build_graph() -> CompiledGraph:
     g.add_node("plan_searches", plan_searches)
     g.add_node("run_adzuna_search", run_adzuna_search)
     g.add_node("dedupe_jobs", dedupe_jobs)
+    g.add_node("screen_jobs", screen_jobs)       # coarse same-field relevance filter
     g.add_node("job_eval", sub)                  # compiled subgraph as a node (Send targets it)
     g.add_node("aggregate_matches", aggregate_matches)
 
@@ -92,7 +94,8 @@ def build_graph() -> CompiledGraph:
     g.add_edge("load_or_parse_profile", "plan_searches")
     g.add_edge("plan_searches", "run_adzuna_search")
     g.add_edge("run_adzuna_search", "dedupe_jobs")
-    g.add_conditional_edges("dedupe_jobs", evaluate_jobs, ["job_eval"])  # fan-out
+    g.add_edge("dedupe_jobs", "screen_jobs")     # relevance pre-screen before the fan-out
+    g.add_conditional_edges("screen_jobs", evaluate_jobs, ["job_eval"])  # fan-out over screened jobs
     g.add_edge("job_eval", "aggregate_matches")  # join (LangGraph waits for all Sends)
     g.add_edge("aggregate_matches", END)
     return g.compile(checkpointer=MemorySaver())  # MVP in-memory (SPEC §9)

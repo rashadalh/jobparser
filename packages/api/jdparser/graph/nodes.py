@@ -37,6 +37,7 @@ from jdparser.llm.schemas import (
     ResumeProfile,
     StoredResumeProfile,
 )
+from jdparser.llm.screener import screen_relevance
 from jdparser.llm.search_planner import plan_adzuna_queries
 from jdparser.resume.extract_text import extract_text
 
@@ -144,6 +145,38 @@ def run_adzuna_search(state: JobMatchState) -> NodeResult:
 
 def dedupe_jobs(state: JobMatchState) -> NodeResult:
     return {"deduped_jobs": dedupe(state["adzuna_results"])}    # adzuna/dedupe.py
+
+
+def screen_jobs(state: JobMatchState) -> NodeResult:
+    """Coarse same-field relevance filter (Adzuna title+snippet) BEFORE the expensive
+    fan-out — drops thematically-wrong jobs (keyword collisions). Fault-tolerant: a
+    screen failure, or a screen that would drop *everything*, leaves the pool intact."""
+    jobs = state["deduped_jobs"]
+    raw_profile = state["resume_profile"]
+    if not jobs or raw_profile is None:
+        return {}
+    profile = ResumeProfile.model_validate(raw_profile)
+    try:
+        result = screen_relevance(profile, jobs)               # llm/screener.py (Gemini Flash Lite)
+    except JDParserError as e:
+        # never let the screen crash a run — keep all jobs, record the error
+        err = ErrorRecord(job_id=None, stage="screen", code=e.code, message=e.message)
+        return {"errors": [err.model_dump()]}
+    relevant = set(result.relevant_job_ids)
+    kept = [j for j in jobs if str(j.get("id")) in relevant]
+    if not kept:                                               # dropped everything / junk ids -> keep all
+        return {}
+    dropped = [j for j in jobs if str(j.get("id")) not in relevant]
+    screened_out = [
+        {
+            "job_id": str(j.get("id", "")),
+            "title": j.get("title", ""),
+            "company": (j.get("company") or {}).get("display_name", ""),
+            "location": (j.get("location") or {}).get("display_name", ""),
+        }
+        for j in dropped
+    ]
+    return {"deduped_jobs": kept, "screened_out": screened_out}
 
 
 def evaluate_jobs(state: JobMatchState) -> list[Send]:          # conditional edge fn, fan-out

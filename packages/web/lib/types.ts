@@ -51,11 +51,15 @@ export interface RunSummary {
   qualified_count: number; rejected_count: number; failed_count: number;
   roles: string[]; error: string | null;
 }
+export interface ScreenedJob {
+  job_id: string; title: string; company: string; location: string;
+}
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {
   run_id: string; user_id: string; status: RunStatus;
   created_at: string; updated_at: string; resume_cache_hit: boolean | null;
   resume_profile: ResumeProfile | null;
   qualified_jobs: EvaluatedJob[]; failures: EvaluatedJob[];
-  rejected: EvaluatedJob[]; errors: ErrorRecord[]; error: string | null;
+  rejected: EvaluatedJob[]; errors: ErrorRecord[];
+  screened_out: ScreenedJob[]; error: string | null;
 }

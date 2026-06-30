@@ -109,4 +109,7 @@ LLM_NODES: dict[str, NodeCfg] = {
     "planner":   _node_cfg("PLANNER",   MODEL_GLM,               "0.3", "4000",  "off"),
     "jd_parser": _node_cfg("JD_PARSER", MODEL_GEMINI_FLASH_LITE, "0.1", "6000",  "off"),
     "judge":     _node_cfg("JUDGE",     MODEL_GLM,               "0.2", "10000", "low"),
+    # relevance pre-screen over Adzuna titles+snippets (cheap, batched): coarse same-field
+    # filter before the expensive per-job evaluation. Gemini Flash Lite; output is just ids.
+    "screener":  _node_cfg("SCREENER",  MODEL_GEMINI_FLASH_LITE, "0.1", "4000",  "off"),
 }

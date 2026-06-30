@@ -1,4 +1,9 @@
-import type { EvaluatedJob, ErrorRecord, JobRequirements } from "@/lib/types";
+import type {
+  EvaluatedJob,
+  ErrorRecord,
+  JobRequirements,
+  ScreenedJob,
+} from "@/lib/types";
 
 // Plain-language explanation of each pipeline stage a job can fail at.
 const STAGE_EXPLAINER: Record<string, string> = {
@@ -188,10 +193,12 @@ export default function FailuresPanel({
   failures,
   rejected,
   errors,
+  screened,
 }: {
   failures: EvaluatedJob[];
   rejected: EvaluatedJob[];
   errors: ErrorRecord[];
+  screened: ScreenedJob[];
 }) {
   // Correlate a failed job with its per-job ErrorRecord (code + message) by job_id.
   const errByJob = new Map<string, ErrorRecord>();
@@ -204,7 +211,7 @@ export default function FailuresPanel({
     >
       <summary className="cursor-pointer text-sm font-medium text-gray-700">
         Audit — {failures.length} failed · {rejected.length} rejected ·{" "}
-        {errors.length} errors
+        {errors.length} errors · {screened.length} filtered
       </summary>
 
       <p className="mt-3 text-xs text-gray-500">
@@ -240,6 +247,33 @@ export default function FailuresPanel({
             {failures.map((f) => (
               <li key={f.job_id}>
                 <FailedItem job={f} error={errByJob.get(f.job_id)} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-4">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Filtered as off-field ({screened.length})
+        </h4>
+        <p className="mt-0.5 text-xs text-gray-400">
+          Dropped before evaluation as not in your field (a keyword match in an
+          unrelated industry/role), to keep the feed and cost focused.
+        </p>
+        {screened.length === 0 ? (
+          <p className="mt-1 text-sm text-gray-400">None</p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {screened.map((s) => (
+              <li key={s.job_id} className="text-sm text-gray-700">
+                <span className="font-medium text-gray-900">{s.title}</span>
+                {s.company ? ` · ${s.company}` : ""}
+                {s.location ? (
+                  <span className="text-gray-500"> · {s.location}</span>
+                ) : (
+                  ""
+                )}
               </li>
             ))}
           </ul>

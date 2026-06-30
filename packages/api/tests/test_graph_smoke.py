@@ -29,12 +29,18 @@ from jdparser.llm.schemas import (
     FetchResult,
     FitJudgment,
     JobRequirements,
+    JobScreen,
     MetRequirement,
     QualityResult,
     ResumeEvidence,
     ResumeProfile,
     StoredResumeProfile,
 )
+
+
+def _fake_screen(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
+    """Default screen fake: keep every job (relevance filtering tested separately)."""
+    return JobScreen(relevant_job_ids=[str(j.get("id")) for j in jobs])
 
 RESUME = str(Path(__file__).parent / "fixtures" / "sample_resume.pdf")
 
@@ -225,6 +231,7 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
+        "screened_out": [],
         "evaluated_jobs": [],
         "qualified_jobs": [],
         "errors": [],
@@ -243,6 +250,7 @@ def run_graph(
     quality: Any = _fake_quality,
     parse: Any = _fake_parse,
     judge: Any = _fake_judge,
+    screen: Any = _fake_screen,
 ) -> dict[str, Any]:
     """Patch the whole pipeline (no network) and invoke the REAL graph."""
     # top-level nodes
@@ -260,6 +268,7 @@ def run_graph(
         "jdparser.graph.nodes.plan_adzuna_queries", lambda profile: [AdzunaQuery(what="engineer")]
     )
     monkeypatch.setattr("jdparser.graph.nodes.run_search_plan", lambda plan: list(jobs))
+    monkeypatch.setattr("jdparser.graph.nodes.screen_relevance", screen)
     # subgraph stages
     monkeypatch.setattr("jdparser.graph.subgraph.resolve_final_url", resolve)
     monkeypatch.setattr("jdparser.graph.subgraph.fetch", fetch_fn)
@@ -437,3 +446,40 @@ def test_broaden_search_strict_drops_nationwide(monkeypatch: pytest.MonkeyPatch)
     state["broaden_search"] = False
     out2 = nodes.plan_searches(state)
     assert [q.get("where") for q in out2["search_plan"]] == ["Seattle, WA"]  # nationwide dropped
+
+
+def test_relevance_screen_filters_off_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The screen drops off-field jobs before the fan-out; only kept jobs are evaluated,
+    the dropped ones land in screened_out, and the §3.10 count invariant still holds."""
+    jobs = [_job("qualified", 0), _job("not_qualified", 1), _job("not_qualified", 2)]
+
+    def _screen(profile: ResumeProfile, js: list[dict[str, Any]]) -> JobScreen:
+        return JobScreen(relevant_job_ids=["job-0"])  # keep only job-0
+
+    result = run_graph(monkeypatch, jobs, screen=_screen)
+    assert len(result["evaluated_jobs"]) == 1
+    assert len(result["deduped_jobs"]) == 1  # pool filtered to the kept job
+    assert {j["job_id"] for j in result["screened_out"]} == {"job-1", "job-2"}
+    assert all(j["title"] for j in result["screened_out"])
+
+
+def test_relevance_screen_keeps_all_when_it_would_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    jobs = [_job("qualified", 0), _job("qualified", 1)]
+
+    def _screen(profile: ResumeProfile, js: list[dict[str, Any]]) -> JobScreen:
+        return JobScreen(relevant_job_ids=[])  # drops everything -> guard keeps all
+
+    result = run_graph(monkeypatch, jobs, screen=_screen)
+    assert len(result["evaluated_jobs"]) == 2
+    assert result["screened_out"] == []
+
+
+def test_relevance_screen_error_keeps_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    jobs = [_job("qualified", 0), _job("qualified", 1)]
+
+    def _screen(profile: ResumeProfile, js: list[dict[str, Any]]) -> JobScreen:
+        raise JDParserError(code="SCREEN_INVALID", message="boom")
+
+    result = run_graph(monkeypatch, jobs, screen=_screen)
+    assert len(result["evaluated_jobs"]) == 2  # screen failure -> pool intact
+    assert any(e["stage"] == "screen" for e in result["errors"])

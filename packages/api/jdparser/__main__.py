@@ -37,6 +37,7 @@ def _initial_state(run_id: str, user_id: str, resume_file_path: str) -> JobMatch
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
+        "screened_out": [],
         "evaluated_jobs": [],
         "qualified_jobs": [],
         "errors": [],

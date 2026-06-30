@@ -104,6 +104,7 @@ def _execute(
         "search_plan": None,
         "adzuna_results": [],
         "deduped_jobs": [],
+        "screened_out": [],
         "evaluated_jobs": [],
         "qualified_jobs": [],
         "errors": [],
@@ -124,6 +125,7 @@ def _execute(
             failures=[e for e in evaluated if e["status"] == "failed"],
             rejected=[e for e in evaluated if e["status"] in ("not_qualified", "uncertain")],
             errors=final["errors"],
+            screened_out=final.get("screened_out", []),
         )
     except JDParserError as e:
         update_run(run_id, status="failed", error=f"{e.code}: {e.message}")

@@ -16,13 +16,22 @@ the candidate's realistic target jobs. The Adzuna `what` field is a keyword sear
 that ANDs all its terms, and `where` matches GEOGRAPHIC PLACES ONLY.
 
 Rules:
-- `what` must be BROAD: one short role phrase, 1-3 words (e.g. "backend engineer", \
-"python engineer", "platform engineer", "backend developer"). Do NOT stack seniority \
-words or multiple skills into one `what` (e.g. NOT "Senior Backend Engineer Python \
-Go") — long `what` strings AND every term and match almost nothing. Seniority and \
-specific skills are judged later from the full job description, not via `what`.
-- Expand role synonyms across `profile.roles` so each query targets a different real \
-role variant; avoid near-duplicate `what` values.
+- `what` must be a BROAD role phrase (1-3 words) IN THE VOCABULARY OF THE CANDIDATE'S \
+ACTUAL FIELD. Infer the real function/field from `skills` and `domains` — do NOT just \
+echo the literal `roles` titles. Many job titles are industry-ambiguous, and a bare \
+keyword match crosses into the WRONG industry. Worked example: a "Product Assurance \
+Specialist" whose skills are test plans, regression/exploratory testing, Jira, and \
+defect tracking is a SOFTWARE QA tester — search "qa analyst", "software tester", \
+"qa engineer", "quality assurance analyst"; do NOT search "product assurance" (Adzuna \
+matches that to food-safety / grocery roles) or "quality assurance" alone (too \
+cross-industry). Pick terms that keep results inside the candidate's real field.
+- Do NOT stack seniority words or multiple skills into one `what` (e.g. NOT "Senior \
+Backend Engineer Python Go") — long ANDed `what` strings match almost nothing. \
+Seniority and specific skills are judged later from the full job description.
+- Produce role-variant queries for the candidate's CURRENT / primary field (synonyms \
+welcome), avoiding near-duplicate `what` values. Do NOT search roles from a PRIOR \
+career the candidate has clearly moved on from (e.g. an old "Lighting Designer" role \
+for someone now working in software QA) unless the resume signals it as a current target.
 - `where` is a REAL geographic location ONLY (a US city/metro/state, e.g. "Austin, \
 TX"). NEVER put "Remote", "remote", "Anywhere", "Remote (US)", or any non-place \
 string in `where` — Adzuna returns ZERO results for a non-geographic `where`. If a \

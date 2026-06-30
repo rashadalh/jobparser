@@ -38,7 +38,8 @@ class JobMatchState(TypedDict):
     broaden_search: bool                  # True = keep the planner's nationwide query; False = strict locations
     search_plan: list[_Json] | None       # list[AdzunaQuery.model_dump()]
     adzuna_results: list[_Json]           # raw Adzuna job dicts (§3.8.1)
-    deduped_jobs: list[_Json]             # deduped raw Adzuna job dicts
+    deduped_jobs: list[_Json]             # deduped (and relevance-screened) raw Adzuna job dicts
+    screened_out: list[_Json]             # jobs dropped by the relevance pre-screen (off-field)
 
     # --- evaluation (fan-out reducers; see §3.10 for lifecycle) ---
     evaluated_jobs: Annotated[list[_Json], operator.add]   # list[EvaluatedJob]

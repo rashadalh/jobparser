@@ -103,6 +103,12 @@ class SearchPlan(BaseModel):
     queries: list[AdzunaQuery]
 
 
+class JobScreen(BaseModel):
+    """Relevance pre-screen output: the job_ids plausibly in the candidate's field."""
+
+    relevant_job_ids: list[str]
+
+
 # --- §3.5 JobRequirements (text extraction — Gemini 3.1 Flash Lite) ----------
 class JobRequirements(BaseModel):
     required_skills: list[str]
@@ -171,7 +177,7 @@ class EvaluatedJob(BaseModel):
 
 # --- §3.10 ErrorRecord -------------------------------------------------------
 ErrorStage = Literal[
-    "resume_extract", "profile", "search_plan", "adzuna_search",
+    "resume_extract", "profile", "search_plan", "adzuna_search", "screen",
     "resolve", "fetch", "extract", "quality", "parse", "judge", "aggregate",
 ]
 
@@ -206,4 +212,6 @@ class RunRecord(BaseModel):
     rejected: list[dict[str, Any]]
     # reason: heterogeneous JSON passthrough (SPEC §3.8.1/§5.2)
     errors: list[dict[str, Any]]
+    # jobs dropped by the relevance pre-screen (off-field) — audit/transparency
+    screened_out: list[dict[str, Any]] = []  # reason: heterogeneous JSON passthrough
     error: str | None
