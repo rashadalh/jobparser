@@ -56,8 +56,6 @@ class ResumeProfile(BaseModel):
 
 # --- §3.8.4 Fingerprint ------------------------------------------------------
 class Fingerprint(BaseModel):
-    file_hash: str
-    text_hash: str
     cache_key: str
 
 
@@ -65,8 +63,6 @@ class Fingerprint(BaseModel):
 class StoredResumeProfile(BaseModel):
     id: str
     user_id: str
-    file_hash: str
-    text_hash: str
     cache_key: str
     profile: ResumeProfile
     parser_version: str

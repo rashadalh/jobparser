@@ -39,10 +39,6 @@ _oai = OpenAI(
 _client = instructor.from_openai(_oai, mode=instructor.Mode.JSON)
 
 
-def get_client() -> instructor.Instructor:
-    return _client
-
-
 def _reasoning_body(setting: str) -> dict[str, Any]:  # reason: heterogeneous extra_body JSON (SPEC §6.3)
     # OpenRouter normalizes `reasoning` across providers (GLM, Gemini, ...).
     if setting == "off":
@@ -61,7 +57,7 @@ def _hit_length(exc: InstructorRetryException) -> bool:
 
 def _call(cfg: NodeCfg, system: str, user: str, schema: type[T], err_code: str) -> T:
     try:
-        obj, completion = get_client().chat.completions.create_with_completion(
+        obj, completion = _client.chat.completions.create_with_completion(
             model=cfg["model"],
             temperature=cfg["temperature"],
             max_tokens=cfg["max_tokens"],  # generous ceiling; billed only as generated

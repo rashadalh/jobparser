@@ -15,7 +15,7 @@ from jdparser.config import (
     NodeCfg,
 )
 from jdparser.llm import client as client_mod
-from jdparser.llm.client import _call, _reasoning_body, get_client
+from jdparser.llm.client import _call, _reasoning_body
 from jdparser.llm.schemas import (
     AdzunaQuery,
     ErrorRecord,
@@ -113,12 +113,10 @@ def _run_record() -> RunRecord:
 ALL_INSTANCES: list[BaseModel] = [
     ResumeEvidence(claim="c", source_quote="q"),
     _profile(),
-    Fingerprint(file_hash="a", text_hash="b", cache_key="c"),
+    Fingerprint(cache_key="c"),
     StoredResumeProfile(
         id="id-1",
         user_id="local",
-        file_hash="a",
-        text_hash="b",
         cache_key="c",
         profile=_profile(),
         parser_version="1.0.0",
@@ -206,7 +204,7 @@ class _Dummy(BaseModel):
 def test_truncation_guard_raises_llm_truncated(monkeypatch: pytest.MonkeyPatch) -> None:
     """A successful completion flagged finish_reason='length' surfaces LLM_TRUNCATED,
     NOT a *_INVALID (SPEC §6.4 / truncation guard)."""
-    completions = get_client().chat.completions
+    completions = client_mod._client.chat.completions
     fake_completion = types.SimpleNamespace(
         choices=[types.SimpleNamespace(finish_reason="length")]
     )
@@ -220,8 +218,3 @@ def test_truncation_guard_raises_llm_truncated(monkeypatch: pytest.MonkeyPatch) 
     with pytest.raises(JDParserError) as ei:
         _call(cfg, "system", "user", _Dummy, "PROFILE_INVALID")
     assert ei.value.code == "LLM_TRUNCATED"
-
-
-def test_client_module_importable() -> None:
-    """get_client constructs without a network call (constructing is fine)."""
-    assert get_client() is client_mod.get_client()

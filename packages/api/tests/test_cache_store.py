@@ -32,8 +32,6 @@ def _make_record(cache_key: str, created_at: str, updated_at: str) -> StoredResu
     return StoredResumeProfile(
         id=str(uuid.uuid4()),
         user_id="local",
-        file_hash="filehash",
-        text_hash="texthash",
         cache_key=cache_key,
         profile=profile,
         parser_version=PARSER_VERSION,

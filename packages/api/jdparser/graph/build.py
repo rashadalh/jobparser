@@ -36,15 +36,10 @@ from jdparser.graph.subgraph import (
     fetch_page,
     finalize,
     judge_fit_node,
+    make_route,
     parse_requirements,
     record_failure,
     resolve_url,
-    route_after_check,
-    route_after_extract,
-    route_after_fetch,
-    route_after_judge,
-    route_after_parse,
-    route_after_resolve,
 )
 
 # reason: LangGraph compiled-graph generics are runtime-irrelevant to callers (SPEC §4.2)
@@ -64,12 +59,12 @@ def build_subgraph() -> CompiledGraph:
 
     g.add_edge(START, "resolve_url")
     # each non-terminal stage -> next | record_failure (router on s["result"])
-    g.add_conditional_edges("resolve_url", route_after_resolve, ["fetch_page", "record_failure"])
-    g.add_conditional_edges("fetch_page", route_after_fetch, ["extract_jd", "record_failure"])
-    g.add_conditional_edges("extract_jd", route_after_extract, ["check_jd", "record_failure"])
-    g.add_conditional_edges("check_jd", route_after_check, ["parse_requirements", "record_failure"])
-    g.add_conditional_edges("parse_requirements", route_after_parse, ["judge_fit", "record_failure"])
-    g.add_conditional_edges("judge_fit", route_after_judge, ["finalize", "record_failure"])
+    g.add_conditional_edges("resolve_url", make_route("fetch_page"), ["fetch_page", "record_failure"])
+    g.add_conditional_edges("fetch_page", make_route("extract_jd"), ["extract_jd", "record_failure"])
+    g.add_conditional_edges("extract_jd", make_route("check_jd"), ["check_jd", "record_failure"])
+    g.add_conditional_edges("check_jd", make_route("parse_requirements"), ["parse_requirements", "record_failure"])
+    g.add_conditional_edges("parse_requirements", make_route("judge_fit"), ["judge_fit", "record_failure"])
+    g.add_conditional_edges("judge_fit", make_route("finalize"), ["finalize", "record_failure"])
     g.add_edge("finalize", END)
     g.add_edge("record_failure", END)
     return g.compile()

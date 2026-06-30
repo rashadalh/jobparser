@@ -207,7 +207,7 @@ def test_parse_only_returns_profile_without_search(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("jdparser.server.extract_text", lambda p: "x" * 500)
     monkeypatch.setattr(
         "jdparser.server.compute_fingerprint",
-        lambda p, t: Fingerprint(file_hash="fh", text_hash="th", cache_key="parse-test"),
+        lambda p, t: Fingerprint(cache_key="parse-test"),
     )
     monkeypatch.setattr("jdparser.server.get_profile", lambda key: None)  # cache miss -> parse
     monkeypatch.setattr("jdparser.server.profile_resume", _prof)

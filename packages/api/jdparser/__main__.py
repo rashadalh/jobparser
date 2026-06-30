@@ -19,31 +19,7 @@ from langchain_core.runnables import RunnableConfig
 
 from jdparser.config import EVAL_FANOUT_CONCURRENCY, JDParserError
 from jdparser.graph.build import build_graph
-from jdparser.graph.state import JobMatchState
-
-
-def _initial_state(run_id: str, user_id: str, resume_file_path: str) -> JobMatchState:
-    return {
-        "run_id": run_id,
-        "user_id": user_id,
-        "resume_file_path": resume_file_path,
-        "resume_text": None,
-        "resume_fingerprint": None,
-        "resume_profile_id": None,
-        "resume_profile": None,
-        "resume_cache_hit": False,
-        "search_locations": None,
-        "broaden_search": True,
-        "max_days_old": None,
-        "include_agencies": False,
-        "search_plan": None,
-        "adzuna_results": [],
-        "deduped_jobs": [],
-        "screened_out": [],
-        "evaluated_jobs": [],
-        "qualified_jobs": [],
-        "errors": [],
-    }
+from jdparser.graph.state import initial_state
 
 
 def _print_summary(result: dict[str, Any]) -> None:
@@ -71,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run_id = str(uuid4())
     graph = build_graph()
-    state = _initial_state(run_id, args.user, args.resume_path)
+    state = initial_state(run_id, user_id=args.user, resume_file_path=args.resume_path)
     config: RunnableConfig = {
         "max_concurrency": EVAL_FANOUT_CONCURRENCY,
         "configurable": {"thread_id": run_id},

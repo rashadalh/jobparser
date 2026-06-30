@@ -8,8 +8,7 @@ from jdparser.config import PARSER_VERSION, SCHEMA_VERSION
 
 
 def test_identical_text_different_files(tmp_path: Path) -> None:
-    """Byte-different files with identical text share text_hash/cache_key but not
-    file_hash."""
+    """Identical text yields an identical cache_key regardless of file bytes."""
     text = "Senior Python engineer with 10 years of distributed systems experience."
     f1 = tmp_path / "a.txt"
     f2 = tmp_path / "b.txt"
@@ -19,9 +18,7 @@ def test_identical_text_different_files(tmp_path: Path) -> None:
     fp1 = compute_fingerprint(str(f1), text)
     fp2 = compute_fingerprint(str(f2), text)
 
-    assert fp1.text_hash == fp2.text_hash
     assert fp1.cache_key == fp2.cache_key
-    assert fp1.file_hash != fp2.file_hash
 
 
 def test_cache_key_matches_formula_and_version_bump(tmp_path: Path) -> None:
@@ -38,7 +35,6 @@ def test_cache_key_matches_formula_and_version_bump(tmp_path: Path) -> None:
         f"{text_hash}:{PARSER_VERSION}:{SCHEMA_VERSION}".encode("utf-8")
     ).hexdigest()
 
-    assert fp.text_hash == text_hash
     assert fp.cache_key == expected_key
 
     bumped_key = hashlib.sha256(

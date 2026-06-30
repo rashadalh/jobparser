@@ -34,7 +34,7 @@ from jdparser.config import (
     now_iso,
 )
 from jdparser.graph.build import build_graph
-from jdparser.graph.state import JobMatchState
+from jdparser.graph.state import initial_state
 from jdparser.llm.resume_profiler import profile_resume
 from jdparser.llm.schemas import RunRecord, StoredResumeProfile
 from jdparser.resume.extract_text import extract_text
@@ -74,7 +74,6 @@ def _execute(
     run_id: str,
     resume_path: str = "",
     profile: dict[str, Any] | None = None,  # reason: ResumeProfile.model_dump() reused from cache/DB
-    profile_id: str | None = None,
     locations: list[str] | None = None,     # per-run location override (None = inferred)
     broaden: bool = True,                   # False = strict locations (drop nationwide query)
     max_days_old: int | None = SEARCH_MAX_DAYS_OLD_DEFAULT,  # listing-age cap in days (0/None = any)
@@ -93,27 +92,15 @@ def _execute(
     ``except`` is mandatory so a run is never left stuck ``running``.
     """
     update_run(run_id, status="running")
-    init: JobMatchState = {
-        "run_id": run_id,
-        "user_id": "local",
-        "resume_file_path": resume_path,
-        "resume_text": None,
-        "resume_fingerprint": None,
-        "resume_profile_id": profile_id,
-        "resume_profile": profile,            # pre-set -> resume stages pass through (no re-parse)
-        "resume_cache_hit": profile is not None,
-        "search_locations": locations,        # user's location override for this run (or None)
-        "broaden_search": broaden,            # include the nationwide query unless strict
-        "max_days_old": max_days_old,         # listing-age cap in days (0/None = any age)
-        "include_agencies": include_agencies, # let recruitment-agency listings past the screen
-        "search_plan": None,
-        "adzuna_results": [],
-        "deduped_jobs": [],
-        "screened_out": [],
-        "evaluated_jobs": [],
-        "qualified_jobs": [],
-        "errors": [],
-    }
+    init = initial_state(
+        run_id,
+        resume_file_path=resume_path,
+        resume_profile=profile,            # pre-set -> resume stages pass through (no re-parse)
+        search_locations=locations,        # user's location override for this run (or None)
+        broaden_search=broaden,            # include the nationwide query unless strict
+        max_days_old=max_days_old,         # listing-age cap in days (0/None = any age)
+        include_agencies=include_agencies, # let recruitment-agency listings past the screen
+    )
     config: RunnableConfig = {
         "configurable": {"thread_id": run_id},
         "max_concurrency": EVAL_FANOUT_CONCURRENCY,
@@ -180,7 +167,7 @@ async def start_run(
             raise HTTPException(status_code=404, detail="profile not found")
         create_run(run_id=run_id, user_id="local", resume_file_path="")
         background.add_task(
-            _execute, run_id, profile=stored.profile.model_dump(), profile_id=stored.id,
+            _execute, run_id, profile=stored.profile.model_dump(),
             locations=locs, broaden=broaden, max_days_old=age, include_agencies=include_agencies,
         )
     elif file is not None:
@@ -215,8 +202,6 @@ def parse_resume_endpoint(file: UploadFile = File(...)) -> StoredResumeProfile:
         rec = StoredResumeProfile(
             id=str(uuid4()),
             user_id="local",
-            file_hash=fp.file_hash,
-            text_hash=fp.text_hash,
             cache_key=fp.cache_key,
             profile=profile,
             parser_version=PARSER_VERSION,

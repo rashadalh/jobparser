@@ -4,6 +4,7 @@ import type {
   JobRequirements,
   ScreenedJob,
 } from "@/lib/types";
+import Pills from "@/components/Pills";
 
 // Plain-language explanation of each pipeline stage a job can fail at.
 const STAGE_EXPLAINER: Record<string, string> = {
@@ -26,27 +27,6 @@ function JobLink({ url }: { url: string | null }) {
     >
       View job posting →
     </a>
-  );
-}
-
-function Pills({ label, items }: { label: string; items: string[] }) {
-  if (!items.length) return null;
-  return (
-    <div className="mt-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-        {label}
-      </span>
-      <ul className="mt-1 flex flex-wrap gap-1">
-        {items.map((it, i) => (
-          <li
-            key={i}
-            className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700"
-          >
-            {it}
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 

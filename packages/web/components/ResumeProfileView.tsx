@@ -1,36 +1,5 @@
 import type { ResumeProfile } from "@/lib/types";
-
-function Pills({
-  label,
-  values,
-  testid,
-}: {
-  label: string;
-  values: string[];
-  testid?: string;
-}) {
-  return (
-    <div data-testid={testid}>
-      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-        {label}
-      </span>
-      {values.length === 0 ? (
-        <p className="mt-1 text-sm text-gray-400">none extracted</p>
-      ) : (
-        <ul className="mt-1 flex flex-wrap gap-1">
-          {values.map((v, i) => (
-            <li
-              key={i}
-              className="rounded bg-gray-100 px-2 py-0.5 text-sm text-gray-700"
-            >
-              {v}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
+import Pills from "@/components/Pills";
 
 function Scalar({ label, value }: { label: string; value: string }) {
   return (
@@ -70,19 +39,40 @@ export default function ResumeProfileView({
         />
         <Pills
           label="Education"
-          values={profile.education}
+          items={profile.education}
           testid="profile-education"
+          emptyText="none extracted"
         />
-        <Pills label="Target roles" values={profile.roles} />
+        <Pills
+          label="Target roles"
+          items={profile.roles}
+          emptyText="none extracted"
+        />
         <div className="sm:col-span-2">
-          <Pills label="Skills" values={profile.skills} />
+          <Pills label="Skills" items={profile.skills} emptyText="none extracted" />
         </div>
-        <Pills label="Domains" values={profile.domains} />
-        <Pills label="Work authorization" values={profile.work_authorization} />
-        <Pills label="Preferred locations" values={profile.locations} />
+        <Pills
+          label="Domains"
+          items={profile.domains}
+          emptyText="none extracted"
+        />
+        <Pills
+          label="Work authorization"
+          items={profile.work_authorization}
+          emptyText="none extracted"
+        />
+        <Pills
+          label="Preferred locations"
+          items={profile.locations}
+          emptyText="none extracted"
+        />
         <Scalar label="Remote preference" value={profile.remote_preference} />
         <div className="sm:col-span-2">
-          <Pills label="Employment types" values={profile.employment_types} />
+          <Pills
+            label="Employment types"
+            items={profile.employment_types}
+            emptyText="none extracted"
+          />
         </div>
       </div>
 

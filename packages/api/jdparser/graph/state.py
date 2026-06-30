@@ -29,7 +29,6 @@ class JobMatchState(TypedDict):
     # --- resume → profile ---
     resume_text: str | None
     resume_fingerprint: str | None        # == cache_key (§3.7)
-    resume_profile_id: str | None
     resume_profile: _Json | None          # ResumeProfile.model_dump()
     resume_cache_hit: bool
 
@@ -63,3 +62,37 @@ class JobEvalState(TypedDict):
     #     PARENT evaluated_jobs/errors reducers (SPEC §3.10). Mechanism detail. ---
     evaluated_jobs: Annotated[list[_Json], operator.add]
     errors: Annotated[list[_Json], operator.add]
+
+
+def initial_state(
+    run_id: str,
+    *,
+    user_id: str = "local",
+    resume_file_path: str = "",
+    resume_profile: _Json | None = None,
+    search_locations: list[str] | None = None,
+    broaden_search: bool = True,
+    max_days_old: int | None = None,
+    include_agencies: bool = False,
+) -> JobMatchState:
+    """Seed a JobMatchState with all channels defaulted; callers override the inputs they set."""
+    return {
+        "run_id": run_id,
+        "user_id": user_id,
+        "resume_file_path": resume_file_path,
+        "resume_text": None,
+        "resume_fingerprint": None,
+        "resume_profile": resume_profile,
+        "resume_cache_hit": resume_profile is not None,
+        "search_locations": search_locations,
+        "broaden_search": broaden_search,
+        "max_days_old": max_days_old,
+        "include_agencies": include_agencies,
+        "search_plan": None,
+        "adzuna_results": [],
+        "deduped_jobs": [],
+        "screened_out": [],
+        "evaluated_jobs": [],
+        "qualified_jobs": [],
+        "errors": [],
+    }

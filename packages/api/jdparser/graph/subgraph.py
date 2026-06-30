@@ -17,6 +17,7 @@ intentionally differ from the ``FailureStage`` enum values):
 | node ``parse_requirements`` | stage ``parse`` | | node ``judge_fit`` | stage ``judge`` |
 """
 
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
@@ -211,25 +212,8 @@ def record_failure(state: JobEvalState) -> NodeResult:
 
 
 # --- routers (conditional edge fns: failure marker -> record_failure | next) -
-def route_after_resolve(s: JobEvalState) -> str:
-    return "record_failure" if s.get("result") else "fetch_page"
-
-
-def route_after_fetch(s: JobEvalState) -> str:
-    return "record_failure" if s.get("result") else "extract_jd"
-
-
-def route_after_extract(s: JobEvalState) -> str:
-    return "record_failure" if s.get("result") else "check_jd"
-
-
-def route_after_check(s: JobEvalState) -> str:
-    return "record_failure" if s.get("result") else "parse_requirements"
-
-
-def route_after_parse(s: JobEvalState) -> str:
-    return "record_failure" if s.get("result") else "judge_fit"
-
-
-def route_after_judge(s: JobEvalState) -> str:
-    return "record_failure" if s.get("result") else "finalize"
+def make_route(next_node: str) -> Callable[[JobEvalState], str]:
+    """A per-stage router: a failure marker in ``result`` -> record_failure, else ``next_node``."""
+    def router(s: JobEvalState) -> str:
+        return "record_failure" if s.get("result") else next_node
+    return router

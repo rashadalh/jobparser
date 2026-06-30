@@ -67,8 +67,6 @@ def _stored_profile() -> StoredResumeProfile:
     return StoredResumeProfile(
         id="seed-id",
         user_id="local",
-        file_hash="fh",
-        text_hash="th",
         cache_key="ck",
         profile=_profile(),
         parser_version="1.0.0",
@@ -223,7 +221,6 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
         "resume_file_path": RESUME,
         "resume_text": None,
         "resume_fingerprint": None,
-        "resume_profile_id": None,
         "resume_profile": None,
         "resume_cache_hit": False,
         "search_locations": None,

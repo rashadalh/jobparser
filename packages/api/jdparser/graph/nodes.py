@@ -74,19 +74,14 @@ def load_or_parse_profile(state: JobMatchState) -> NodeResult:
     if existing is not None:
         return {
             "resume_profile": existing.profile.model_dump(),
-            "resume_profile_id": existing.id,
             "resume_cache_hit": True,
         }
     text = state["resume_text"]
     assert text is not None
     profile = profile_resume(text)                      # llm/resume_profiler.py (gemini-3.1-flash-lite)
-    # recompute the full fingerprint here on miss (state only carries cache_key)
-    fp = compute_fingerprint(state["resume_file_path"], text)
     rec = StoredResumeProfile(
         id=str(uuid4()),
         user_id=state["user_id"],
-        file_hash=fp.file_hash,
-        text_hash=fp.text_hash,
         cache_key=key,
         profile=profile,
         parser_version=PARSER_VERSION,
@@ -98,7 +93,6 @@ def load_or_parse_profile(state: JobMatchState) -> NodeResult:
     put_profile(rec)                                    # atomic write
     return {
         "resume_profile": profile.model_dump(),
-        "resume_profile_id": rec.id,
         "resume_cache_hit": False,
     }
 
