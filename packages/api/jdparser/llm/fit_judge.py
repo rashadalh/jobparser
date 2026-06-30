@@ -1,6 +1,6 @@
-"""fit_judge — `judge_fit` (logic node, GLM 5.2). SPEC §3.6 / §4.4.
+"""fit_judge — `judge_fit` (logic node, gemini-3.1-flash-lite). SPEC §3.6 / §4.4.
 
-Defaults (env-overridable, SPEC §6.3): GLM 5.2, temp 0.2, max_tokens 10000,
+Defaults (env-overridable, SPEC §6.3): gemini-3.1-flash-lite, temp 0.2, max_tokens 10000,
 reasoning low (the one node where reasoning earns its keep). Maps validation
 failure -> JUDGE_INVALID. The displayed-job confidence gate (>= 0.75) is applied by
 code in aggregate_matches (SPEC §7); the judge only sets confidence on merit.

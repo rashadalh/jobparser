@@ -65,7 +65,7 @@ SCHEMA_VERSION: str = "1.2.0"               # semver; ResumeProfile schema (1.1.
 
 # --- §6.3 LLM constants & model routing --------------------------------------
 OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
-MODEL_GLM: str = "z-ai/glm-5.2"                          # logic
+MODEL_LOGIC: str = "google/gemini-3.1-flash-lite"        # logic (profiler / planner / judge)
 MODEL_GEMINI_FLASH_LITE: str = "google/gemini-3.1-flash-lite"  # text extraction
 LLM_MAX_RETRIES: int = 2                     # instructor re-ask count on validation failure
 
@@ -105,10 +105,10 @@ def _node_cfg(node: str, model: str, temp: str, max_tokens: str, reasoning: str)
 
 
 LLM_NODES: dict[str, NodeCfg] = {
-    "profiler":  _node_cfg("PROFILER",  MODEL_GLM,               "0.2", "8000",  "off"),
-    "planner":   _node_cfg("PLANNER",   MODEL_GLM,               "0.3", "4000",  "off"),
+    "profiler":  _node_cfg("PROFILER",  MODEL_LOGIC,               "0.2", "8000",  "off"),
+    "planner":   _node_cfg("PLANNER",   MODEL_LOGIC,               "0.3", "4000",  "off"),
     "jd_parser": _node_cfg("JD_PARSER", MODEL_GEMINI_FLASH_LITE, "0.1", "6000",  "off"),
-    "judge":     _node_cfg("JUDGE",     MODEL_GLM,               "0.2", "10000", "low"),
+    "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "low"),
     # relevance pre-screen over Adzuna titles+snippets (cheap, batched): coarse same-field
     # filter before the expensive per-job evaluation. Gemini Flash Lite; output is just ids.
     "screener":  _node_cfg("SCREENER",  MODEL_GEMINI_FLASH_LITE, "0.1", "4000",  "off"),

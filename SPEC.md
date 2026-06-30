@@ -25,7 +25,7 @@ Each fan-out worker runs the **job-evaluation subgraph** (§4.3):
 short-circuiting to `record_failure` on any stage failure.
 
 Two LLM tiers (§3, §6.3), both low-cost open-weight models via **OpenRouter**:
-**logic** work (resume profiling, search planning, fit judgment) runs on **GLM 5.2**;
+**logic** work (resume profiling, search planning, fit judgment) runs on **gemini-3.1-flash-lite**;
 **text extraction** (turning JD prose into structured requirements) runs on
 **Gemini 3.1 Flash Lite**.
 
@@ -202,7 +202,7 @@ The two terminal nodes (`finalize` on success, `record_failure` on failure) each
 a clean `EvaluatedJob` and return `{"evaluated_jobs": [ej]}` into the parent reducer.
 `result` is never the thing emitted to the parent.
 
-### 3.3 `ResumeProfile` (logic — GLM 5.2)
+### 3.3 `ResumeProfile` (logic — gemini-3.1-flash-lite)
 
 ```python
 from typing import Literal
@@ -243,7 +243,7 @@ class ResumeProfile(BaseModel):
 Invariant: every non-trivial claim the profiler asserts (seniority, years, a key
 skill) SHOULD have a corresponding `evidence` entry. Serialization: `.model_dump()`.
 
-### 3.4 `AdzunaQuery` (logic — GLM 5.2) — **closed schema**
+### 3.4 `AdzunaQuery` (logic — gemini-3.1-flash-lite) — **closed schema**
 
 The planner MAY expand role synonyms but **MUST NOT invent parameters**. The
 schema enumerates exactly the supported Adzuna params (§3.8.1 cites the API).
@@ -289,7 +289,7 @@ class JobRequirements(BaseModel):
     employment_type: EmploymentType | None
 ```
 
-### 3.6 `FitJudgment` (logic — GLM 5.2)
+### 3.6 `FitJudgment` (logic — gemini-3.1-flash-lite)
 
 ```python
 FitDecision = Literal["qualified", "not_qualified", "uncertain"]
@@ -327,7 +327,7 @@ class StoredResumeProfile(BaseModel):
     profile: ResumeProfile
     parser_version: str      # PARSER_VERSION  (§6.1)
     schema_version: str      # SCHEMA_VERSION  (§6.1)
-    model: str               # OpenRouter slug that produced `profile` (e.g. "z-ai/glm-5.2")
+    model: str               # OpenRouter slug that produced `profile` (e.g. "google/gemini-3.1-flash-lite")
     created_at: str          # ISO-8601 UTC
     updated_at: str          # ISO-8601 UTC
 ```
@@ -599,10 +599,10 @@ parent `evaluated_jobs` reducer (§3.10).
 ### 4.4 LLM agents — `llm/`
 
 ```python
-def profile_resume(resume_text: str) -> ResumeProfile          # resume_profiler.py  (GLM)
-def plan_adzuna_queries(profile: ResumeProfile) -> list[AdzunaQuery]  # search_planner.py (GLM)
+def profile_resume(resume_text: str) -> ResumeProfile          # resume_profiler.py  (logic)
+def plan_adzuna_queries(profile: ResumeProfile) -> list[AdzunaQuery]  # search_planner.py (logic)
 def parse_jd_requirements(jd_text: str) -> JobRequirements      # jd_parser.py       (Gemini Flash Lite)
-def judge_fit(profile: ResumeProfile, requirements: JobRequirements) -> FitJudgment  # fit_judge.py (GLM)
+def judge_fit(profile: ResumeProfile, requirements: JobRequirements) -> FitJudgment  # fit_judge.py (logic)
 ```
 
 All four call `instructor`'s `client.chat.completions.create(model=...,
@@ -743,13 +743,13 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 
 Provider is **OpenRouter** (OpenAI-compatible API) accessed via the **OpenAI Python
 SDK** + **`instructor`** for Pydantic-validated structured output. Low-cost
-open-weight models route by work type: **logic → GLM 5.2**, **text extraction →
+open-weight models route by work type: **logic → gemini-3.1-flash-lite**, **text extraction →
 Gemini 3.1 Flash Lite**.
 
 | Name | Value |
 |---|---|
 | `OPENROUTER_BASE_URL` | `"https://openrouter.ai/api/v1"` |
-| `MODEL_GLM` | `"z-ai/glm-5.2"` (logic) |
+| `MODEL_LOGIC` | `"google/gemini-3.1-flash-lite"` (logic) |
 | `MODEL_GEMINI_FLASH_LITE` | `"google/gemini-3.1-flash-lite"` (text extraction) |
 | `LLM_MAX_RETRIES` | `2` (instructor re-ask count on validation failure) |
 
@@ -759,10 +759,10 @@ Generous defaults; **every field is overridable at startup via an env var** (bel
 
 | node key | function | model | temperature | max_tokens | reasoning | Rationale |
 |---|---|---|---|---|---|---|
-| `profiler` | `profile_resume` | `MODEL_GLM` | `0.2` | `8000` | `off` | logic: seniority/domain/authorization inference + verbose `evidence[]` |
-| `planner` | `plan_adzuna_queries` | `MODEL_GLM` | `0.3` | `4000` | `off` | logic: synonym expansion (small output) |
+| `profiler` | `profile_resume` | `MODEL_LOGIC` | `0.2` | `8000` | `off` | logic: seniority/domain/authorization inference + verbose `evidence[]` |
+| `planner` | `plan_adzuna_queries` | `MODEL_LOGIC` | `0.3` | `4000` | `off` | logic: synonym expansion (small output) |
 | `jd_parser` | `parse_jd_requirements` | `MODEL_GEMINI_FLASH_LITE` | `0.1` | `6000` | `off` | text extraction: stated requirements from JD |
-| `judge` | `judge_fit` | `MODEL_GLM` | `0.2` | `10000` | `low` | logic: the one node that genuinely reasons; `met_requirements[]` + `rationale` + reasoning headroom |
+| `judge` | `judge_fit` | `MODEL_LOGIC` | `0.2` | `10000` | `low` | logic: the one node that genuinely reasons; `met_requirements[]` + `rationale` + reasoning headroom |
 
 **Sizing rationale (how the ceilings are qualified).** `max_tokens` is a **ceiling
 billed only as generated**, not a reservation — a higher ceiling costs nothing unless
@@ -772,7 +772,7 @@ serialized JSON + reasoning headroom + margin. Worst-case JSON output by schema:
 `ResumeProfile` ~2.5K tokens (driven by `evidence[]`), `FitJudgment` ~1.7K
 (`met_requirements[]` + `rationale`), `JobRequirements` ~1K, `SearchPlan` ~0.5K. The
 `judge` ceiling is largest because it carries reasoning on top of the JSON; the two
-pure-extraction GLM nodes run reasoning `off` (schema-fill needs no chain-of-thought),
+pure-extraction logic nodes run reasoning `off` (schema-fill needs no chain-of-thought),
 and Gemini Flash Lite barely reasons.
 
 **Env overrides (read once at startup in `config.py`).** For each node, the four
@@ -802,10 +802,10 @@ def _node_cfg(node, model, temp, max_tokens, reasoning):
     }
 
 LLM_NODES = {
-    "profiler":  _node_cfg("PROFILER",  MODEL_GLM,               "0.2", "8000",  "off"),
-    "planner":   _node_cfg("PLANNER",   MODEL_GLM,               "0.3", "4000",  "off"),
+    "profiler":  _node_cfg("PROFILER",  MODEL_LOGIC,               "0.2", "8000",  "off"),
+    "planner":   _node_cfg("PLANNER",   MODEL_LOGIC,               "0.3", "4000",  "off"),
     "jd_parser": _node_cfg("JD_PARSER", MODEL_GEMINI_FLASH_LITE, "0.1", "6000",  "off"),
-    "judge":     _node_cfg("JUDGE",     MODEL_GLM,               "0.2", "10000", "low"),
+    "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "low"),
 }
 ```
 
@@ -930,7 +930,7 @@ user-visible behavior.
    `lib/types.ts` mirrors snake_case fields directly — no camelCase remap layer.
    This supersedes the camelCase TS shape in `docs/system-overview.html`.
 2. **Provider + model routing** per §6.3: **OpenRouter** via the OpenAI SDK +
-   `instructor`; **GLM 5.2** (`z-ai/glm-5.2`) for logic nodes, **Gemini 3.1 Flash
+   `instructor`; **gemini-3.1-flash-lite** (`z-ai/glm-5.2`) for logic nodes, **Gemini 3.1 Flash
    Lite** (`google/gemini-3.1-flash-lite`) for literal JD extraction.
 3. **JD extraction** order: JSON-LD `JobPosting.description` → ATS-specific parser →
    `trafilatura` readable text. Playwright is a fallback only when static fetch

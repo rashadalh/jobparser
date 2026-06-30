@@ -1,6 +1,6 @@
-"""resume_profiler — `profile_resume` (logic node, GLM 5.2). SPEC §3.3 / §4.4.
+"""resume_profiler — `profile_resume` (logic node, gemini-3.1-flash-lite). SPEC §3.3 / §4.4.
 
-Defaults (env-overridable, SPEC §6.3): GLM 5.2, temp 0.2, max_tokens 8000,
+Defaults (env-overridable, SPEC §6.3): gemini-3.1-flash-lite, temp 0.2, max_tokens 8000,
 reasoning off. Maps validation failure -> PROFILE_INVALID (SPEC §6.4).
 """
 

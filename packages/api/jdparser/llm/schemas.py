@@ -17,7 +17,7 @@ from jdparser.config import (
     ADZUNA_MAX_RESULTS_PER_PAGE,
 )
 
-# --- §3.3 ResumeProfile (logic — GLM 5.2) ------------------------------------
+# --- §3.3 ResumeProfile (logic — gemini-3.1-flash-lite) ------------------------------------
 Seniority = Literal["intern", "junior", "mid", "senior", "staff", "principal", "executive"]
 RemotePref = Literal["onsite", "hybrid", "remote", "any"]
 EmploymentType = Literal["full_time", "part_time", "contract", "permanent"]
@@ -76,7 +76,7 @@ class StoredResumeProfile(BaseModel):
     updated_at: str
 
 
-# --- §3.4 AdzunaQuery (logic — GLM 5.2) — closed schema ----------------------
+# --- §3.4 AdzunaQuery (logic — gemini-3.1-flash-lite) — closed schema ----------------------
 class AdzunaQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")  # planner MUST NOT invent params
 
@@ -123,7 +123,7 @@ class JobRequirements(BaseModel):
     employment_type: EmploymentType | None
 
 
-# --- §3.6 FitJudgment (logic — GLM 5.2) --------------------------------------
+# --- §3.6 FitJudgment (logic — gemini-3.1-flash-lite) --------------------------------------
 FitDecision = Literal["qualified", "not_qualified", "uncertain"]
 
 

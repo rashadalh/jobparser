@@ -25,7 +25,7 @@ from jdparser.cache.fingerprint import compute_fingerprint
 from jdparser.cache.store import get_profile, list_profiles, put_profile
 from jdparser.config import (
     EVAL_FANOUT_CONCURRENCY,
-    MODEL_GLM,
+    MODEL_LOGIC,
     PARSER_VERSION,
     SCHEMA_VERSION,
     UPLOADS_DIR,
@@ -210,7 +210,7 @@ def parse_resume_endpoint(file: UploadFile = File(...)) -> StoredResumeProfile:
             profile=profile,
             parser_version=PARSER_VERSION,
             schema_version=SCHEMA_VERSION,
-            model=MODEL_GLM,
+            model=MODEL_LOGIC,
             created_at=now_iso(),
             updated_at=now_iso(),
         )
