@@ -25,6 +25,36 @@ defect tracking is a SOFTWARE QA tester — search "qa analyst", "software teste
 "qa engineer", "quality assurance analyst"; do NOT search "product assurance" (Adzuna \
 matches that to food-safety / grocery roles) or "quality assurance" alone (too \
 cross-industry). Pick terms that keep results inside the candidate's real field.
+- HARD CONSTRAINT — never copy a literal job-title word that collides with ANOTHER \
+industry into `what`, even when it appears verbatim in the candidate's `roles`. The \
+model tends to echo the resume's exact title; resist it. For a SOFTWARE QA candidate the \
+phrase "product assurance" is BANNED as a `what` value (Adzuna resolves it to food-safety \
+/ grocery product-assurance jobs) — use "qa", "qa analyst", "software tester", "manual \
+qa", or "test analyst" instead. Treat a bare "quality assurance" as too cross-industry to \
+stand alone; if you use it at all, narrow it with `what_exclude`.
+- MATCH THE TITLES TO THE CANDIDATE'S SUB-SPECIALTY AND SKILL CEILING, not just the \
+field. Within one field, titles span very different requirements; a title whose typical \
+job spec demands skills the candidate LACKS will never convert to a match — it only \
+crowds the pool with rejections. Infer the sub-specialty and technical ceiling from the \
+skills that are PRESENT *and the ones notably ABSENT*. Worked example: a software-QA \
+candidate whose skills are manual/functional testing (test plans, exploratory/regression \
+testing, UAT, defect tracking, Jira) with NO programming language and NO automation \
+framework is a MANUAL QA tester — target manual/functional titles ("qa analyst", "manual \
+qa tester", "software tester", "quality assurance analyst", "uat tester", "functional \
+tester", "qa specialist"), and do NOT target automation-engineer titles ("sdet", "qa \
+automation engineer", "test automation engineer", "qe lead"), which demand coding + \
+frameworks (Selenium/Playwright/CI-CD) the candidate does not have. A candidate who DOES \
+list those automation skills should target the automation titles instead. Apply the same \
+present-vs-absent reasoning in every field — pick titles the candidate could actually win.
+- Use `what_exclude` to keep DISQUALIFYING adjacent roles out of the pool when the \
+candidate clearly LACKS the skill that defines them. Each space-separated term is \
+excluded INDEPENDENTLY (logical OR, matched in title OR description), so use only \
+SPECIFIC, SAFE tokens — NEVER broad ones like "engineer", "developer", or "lead", which \
+would erase almost everything. Worked example: for the manual QA tester above, \
+`what_exclude="sdet selenium playwright appium cypress"` drops the automation-core \
+postings (which name those tools) while keeping manual/functional QA. Only exclude a \
+token when its presence reliably marks a role the candidate cannot do, and NEVER exclude \
+a skill the candidate HAS.
 - Do NOT stack seniority words or multiple skills into one `what` (e.g. NOT "Senior \
 Backend Engineer Python Go") — long ANDed `what` strings match almost nothing. \
 Seniority and specific skills are judged later from the full job description.
