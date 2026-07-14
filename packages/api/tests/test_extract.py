@@ -10,10 +10,12 @@ browser — it is intentionally not exercised here.
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 
 from jdparser.config import MAX_JD_CHARS, MIN_JD_CHARS
 from jdparser.extract import extract_jd_text
+from jdparser.extract import fetch as fetch_mod
 from jdparser.extract.ats import ats_extract
 from jdparser.extract.fetch import fetch
 from jdparser.extract.jsonld import jobposting_jsonld
@@ -145,3 +147,51 @@ def test_fetch_static_substantive_returns_http_source() -> None:
     assert result.status == 200
     assert result.url == url
     assert "BLOG_BODY_MARKER" in result.html
+
+
+# --- headed-retry escalation (mocks `_render` itself — real Playwright rendering
+#     is intentionally not exercised here, matching this file's own convention) --
+@respx.mock
+def test_fetch_escalates_to_headed_when_headless_render_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blocked-looking (non-2xx) headless render triggers exactly one headed retry,
+    and that retry's result is what `fetch` returns."""
+    url = "https://www.adzuna.com/land/ad/123"
+    respx.get(url).mock(return_value=httpx.Response(403, text="denied"))  # httpx path fails too
+
+    calls: list[bool] = []
+
+    def fake_render(u: str, *, headless: bool = True) -> tuple[str, int, str]:
+        calls.append(headless)
+        if headless:
+            return ("<html>unusual behaviour from your connection</html>", 403, u)
+        return ("<html>the real long job description</html>", 200, u)
+
+    monkeypatch.setattr(fetch_mod, "_render", fake_render)
+    result = fetch(url)
+
+    assert calls == [True, False]  # headless first, exactly one headed retry
+    assert result.status == 200
+    assert "real long job description" in result.html
+
+
+@respx.mock
+def test_fetch_does_not_escalate_when_headless_render_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A normal 2xx headless render — even with thin content — is NOT escalated to a
+    headed retry. A genuinely short JD is a quality-gate failure, not a blocked fetch."""
+    url = "https://jobs.example.com/thin-listing"
+    respx.get(url).mock(return_value=httpx.Response(200, text="<html>too short</html>"))
+
+    calls: list[bool] = []
+
+    def fake_render(u: str, *, headless: bool = True) -> tuple[str, int, str]:
+        calls.append(headless)
+        return ("<html>short</html>", 200, u)
+
+    monkeypatch.setattr(fetch_mod, "_render", fake_render)
+    fetch(url)
+
+    assert calls == [True]  # no headed retry

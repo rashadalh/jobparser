@@ -1,4 +1,5 @@
 import type {
+  CandidateNote,
   RunRecord,
   ProfileSummary,
   RunSummary,
@@ -66,4 +67,28 @@ export async function listRuns(): Promise<RunSummary[]> {
   const r = await fetch(`${BASE}/api/runs`);
   if (!r.ok) throw new Error(`runs failed: ${r.status}`);
   return r.json();
+}
+// Report "this isn't actually a fit" on a QUALIFIED job. Distilled into the candidate's
+// note list (keyed by resume cache_key) and applied on the candidate's NEXT run.
+export async function submitFeedback(
+  runId: string,
+  jobId: string,
+  text: string,
+): Promise<CandidateNote[]> {
+  const fd = new FormData();
+  fd.append("run_id", runId);
+  fd.append("job_id", jobId);
+  fd.append("text", text);
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd });
+  if (!r.ok) {
+    let detail = `feedback failed: ${r.status}`;
+    try {
+      const j = await r.json();
+      if (j?.detail) detail = j.detail;
+    } catch {
+      /* keep the status-based message */
+    }
+    throw new Error(detail);
+  }
+  return (await r.json()).notes;
 }

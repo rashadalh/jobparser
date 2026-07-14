@@ -42,9 +42,18 @@ MAX_RESUME_CHARS: int = 40000               # characters; truncate resume before
 MIN_JD_CHARS: int = 600                     # characters; min extracted JD length to pass quality
 MAX_JD_CHARS: int = 60000                   # characters; truncate JD before LLM (cost guard)
 JD_BOILERPLATE_MAX_RATIO: float = 0.40      # fraction; max nav/boilerplate share before quality fail
-SEARCH_PLAN_MAX_QUERIES: int = 6            # count; cap on planner output queries
+# words; a "line" longer than this is real prose that happens to mention a boilerplate
+# phrase (e.g. a full JD ending in "...All rights reserved."), not a standalone nav/footer
+# line — the substring check only applies at or under this length (SPEC §6.1/quality.py).
+BOILERPLATE_LINE_MAX_WORDS: int = 12
+# count; cap on planner output queries — env-overridable (bumped 6->8: more room for
+# distinct role-variant coverage, esp. when there's no location signal to scope by).
+SEARCH_PLAN_MAX_QUERIES: int = int(os.getenv("SEARCH_PLAN_MAX_QUERIES", "8"))
 SEARCH_MAX_DAYS_OLD_DEFAULT: int = 7        # days; default listing-age filter (0 = any age)
-ADZUNA_MAX_PAGES: int = 3                   # count; max pages per query (path param)
+# count; max pages per query (path param) — env-overridable (bumped 3->5: a nationwide/
+# unscoped query spreads its fixed results_per_page budget over a much larger area than a
+# geo-scoped one, so a niche/geographically-concentrated field can starve at pages=3).
+ADZUNA_MAX_PAGES: int = int(os.getenv("ADZUNA_MAX_PAGES", "5"))
 ADZUNA_DEFAULT_RESULTS_PER_PAGE: int = 20   # count; schema default for results_per_page
 ADZUNA_MAX_RESULTS_PER_PAGE: int = 50       # count; Adzuna hard max (schema upper bound)
 # A real browser UA. The original polite-bot string ("...compatible; jdparser/1.0...")
@@ -55,6 +64,11 @@ HTTP_USER_AGENT: str = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
+# Adzuna's own `/land/...` redirect pages sometimes 403 a referrer-less request even with
+# a browser UA (observed: real browser traffic always carries a Referer, ours didn't) —
+# a plausible bot signal on top of UA. Cheap to set, no guarantee against an IP-reputation-
+# based block specifically (see fetch.py/resolve.py callers).
+JD_FETCH_REFERER: str = "https://www.adzuna.com/"
 ADZUNA_COUNTRY: str = "us"                  # Adzuna country code (MVP-fixed, §8/§9)
 ADZUNA_BASE_URL: str = "https://api.adzuna.com/v1/api"
 EVAL_FANOUT_CONCURRENCY: int = 8            # count; max concurrent job-eval workers
@@ -63,6 +77,11 @@ EVAL_FANOUT_CONCURRENCY: int = 8            # count; max concurrent job-eval wor
 # RANKS by relevance and we keep the top N; the rest are recorded as screened_out
 # (reason "over_cap"). Applied even when the screen errors/returns junk (timeout guard).
 SCREEN_EVAL_CAP: int = int(os.getenv("SCREEN_EVAL_CAP", "80"))  # count; max jobs evaluated
+# Max jobs per screener LLM call. The screener's output enumerates every relevant/agency
+# id, so its token cost scales with pool size, not just a fixed prompt — a wide nationwide
+# pull (1000+ deduped jobs) overflows a single call's max_tokens and truncates. screen_jobs
+# chunks the deduped pool into batches of this size and merges the results instead.
+SCREEN_BATCH_SIZE: int = int(os.getenv("SCREEN_BATCH_SIZE", "150"))
 FETCH_TIMEOUT_S: int = 20                   # seconds; httpx request timeout
 PLAYWRIGHT_TIMEOUT_MS: int = 30000          # milliseconds; Playwright nav/render timeout
 HTTP_MAX_RETRIES: int = 2                   # count; httpx retry attempts on 5xx/timeout
@@ -114,8 +133,10 @@ LLM_NODES: dict[str, NodeCfg] = {
     "profiler":  _node_cfg("PROFILER",  MODEL_LOGIC,               "0.2", "8000",  "off"),
     "planner":   _node_cfg("PLANNER",   MODEL_LOGIC,               "0.3", "4000",  "off"),
     "jd_parser": _node_cfg("JD_PARSER", MODEL_GEMINI_FLASH_LITE, "0.1", "6000",  "off"),
-    "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "low"),
+    "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "medium"),
     # relevance pre-screen over Adzuna titles+snippets (cheap, batched): coarse same-field
     # filter before the expensive per-job evaluation. Gemini Flash Lite; output is just ids.
     "screener":  _node_cfg("SCREENER",  MODEL_GEMINI_FLASH_LITE, "0.1", "4000",  "off"),
+    # merges free-text feedback into the candidate's existing note list (not blind-append).
+    "feedback":  _node_cfg("FEEDBACK",  MODEL_LOGIC,               "0.2", "2000",  "off"),
 }

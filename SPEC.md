@@ -301,6 +301,12 @@ class MetRequirement(BaseModel):
 
 
 class FitJudgment(BaseModel):
+    # declared before `decision` so structured-output field order forces the model to
+    # commit to these BEFORE computing the final decision (see fit_judge.py THEMATIC FIT)
+    thematic_fit: bool               # same profession/specialization as the candidate's target roles/domains?
+    relevant_years_experience: float # years from work_periods actually IN the JD's specialization
+    #                                  (NOT profile.total_years_experience — that's a domain-blind career total)
+    thematic_rationale: str          # which work_periods/skills were counted, and why the specialization does/doesn't match
     decision: FitDecision
     confidence: float = Field(ge=0.0, le=1.0)
     met_requirements: list[MetRequirement]
@@ -311,7 +317,7 @@ class FitJudgment(BaseModel):
 
 Invariant: if `decision == "qualified"`, every entry in `JobRequirements.required_skills`
 the judge counts as met MUST appear in `met_requirements` with a non-empty
-`evidence_quote`; `failed_dealbreakers` MUST be empty.
+`evidence_quote`; `failed_dealbreakers` MUST be empty; `thematic_fit` MUST be true.
 
 ### 3.7 `StoredResumeProfile` (durable cache record — JSON file)
 
@@ -717,8 +723,8 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `MIN_JD_CHARS` | `600` | characters; min extracted JD text length to pass quality |
 | `MAX_JD_CHARS` | `60000` | characters; truncate JD before LLM (cost guard) |
 | `JD_BOILERPLATE_MAX_RATIO` | `0.40` | fraction; max nav/boilerplate share before quality fail |
-| `SEARCH_PLAN_MAX_QUERIES` | `6` | count; cap on planner output queries |
-| `ADZUNA_MAX_PAGES` | `3` | count; max pages per query (path param) |
+| `SEARCH_PLAN_MAX_QUERIES` | `8` (env `SEARCH_PLAN_MAX_QUERIES`) | count; cap on planner output queries — bumped from 6 for more distinct role-variant coverage |
+| `ADZUNA_MAX_PAGES` | `5` (env `ADZUNA_MAX_PAGES`) | count; max pages per query (path param) — bumped from 3: a nationwide query's fixed `results_per_page`x`pages` budget spreads over a much larger area than a geo-scoped one, so a concentrated niche field can starve otherwise |
 | `ADZUNA_DEFAULT_RESULTS_PER_PAGE` | `20` | count; schema default for `results_per_page` |
 | `ADZUNA_MAX_RESULTS_PER_PAGE` | `50` | count; Adzuna hard max (schema upper bound) |
 | `HTTP_USER_AGENT` | `"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"` | string; UA for httpx + Playwright fetches. **Spec-corrected (was a `compatible; jdparser/1.0` polite-bot string):** Adzuna landing pages and many ATS bot-protections return **403** to a non-browser UA, which makes the JD-extraction flow (§7.5) impossible; a browser UA returns the full JobPosting JSON-LD. One UA constant for both fetch paths. |
@@ -762,7 +768,7 @@ Generous defaults; **every field is overridable at startup via an env var** (bel
 | `profiler` | `profile_resume` | `MODEL_LOGIC` | `0.2` | `8000` | `off` | logic: seniority/domain/authorization inference + verbose `evidence[]` |
 | `planner` | `plan_adzuna_queries` | `MODEL_LOGIC` | `0.3` | `4000` | `off` | logic: synonym expansion (small output) |
 | `jd_parser` | `parse_jd_requirements` | `MODEL_GEMINI_FLASH_LITE` | `0.1` | `6000` | `off` | text extraction: stated requirements from JD |
-| `judge` | `judge_fit` | `MODEL_LOGIC` | `0.2` | `10000` | `low` | logic: the one node that genuinely reasons; `met_requirements[]` + `rationale` + reasoning headroom |
+| `judge` | `judge_fit` | `MODEL_LOGIC` | `0.2` | `10000` | `medium` | logic: the one node that genuinely reasons; `met_requirements[]` + `rationale` + reasoning headroom (bumped from `low`: thematic/functional fit needs more than mechanical skill-list matching) |
 
 **Sizing rationale (how the ceilings are qualified).** `max_tokens` is a **ceiling
 billed only as generated**, not a reservation — a higher ceiling costs nothing unless
@@ -784,7 +790,7 @@ fields fall back to the defaults above when the env var is unset. `<NODE>` ∈
 | model slug | `LLM_MODEL_<NODE>` | `LLM_MODEL_JUDGE=z-ai/glm-5.1` |
 | temperature | `LLM_TEMP_<NODE>` | `LLM_TEMP_PROFILER=0.1` |
 | max_tokens (ceiling) | `LLM_MAX_TOKENS_<NODE>` | `LLM_MAX_TOKENS_PROFILER=12000` |
-| reasoning | `LLM_REASONING_<NODE>` | `LLM_REASONING_JUDGE=medium` |
+| reasoning | `LLM_REASONING_<NODE>` | `LLM_REASONING_JUDGE=high` |
 
 `reasoning` ∈ `{off, low, medium, high}` → mapped to OpenRouter's control:
 `off` → `extra_body={"reasoning": {"enabled": false}}`; otherwise
@@ -805,7 +811,7 @@ LLM_NODES = {
     "profiler":  _node_cfg("PROFILER",  MODEL_LOGIC,               "0.2", "8000",  "off"),
     "planner":   _node_cfg("PLANNER",   MODEL_LOGIC,               "0.3", "4000",  "off"),
     "jd_parser": _node_cfg("JD_PARSER", MODEL_GEMINI_FLASH_LITE, "0.1", "6000",  "off"),
-    "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "low"),
+    "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "medium"),
 }
 ```
 
@@ -852,8 +858,8 @@ cite them precisely.
   resolved `final_url`, `jd_char_len ≥ MIN_JD_CHARS` with quality `passed`, and a
   non-null `requirements` (valid `JobRequirements`). (Tier 2 + Tier 3.)
 - **§7.2 — Fit gate.** A qualified job has `judgment.failed_dealbreakers == []`,
-  `judgment.missing_hard_requirements == []`, and a `met_requirements` entry (with
-  evidence) for each required skill counted as met. (Tier 2.)
+  `judgment.missing_hard_requirements == []`, `judgment.thematic_fit == true`, and a
+  `met_requirements` entry (with evidence) for each required skill counted as met. (Tier 2.)
 - **§7.3 — Confidence gate.** `judgment.decision == "qualified"` AND
   `judgment.confidence ≥ CONFIDENCE_THRESHOLD (0.75)`. Uncertain / below-threshold
   jobs are excluded from `qualified_jobs` (they land in `rejected`). (Tier 2.)
@@ -875,6 +881,7 @@ def is_qualified(ej: dict) -> bool:
         and j is not None
         and j["decision"] == "qualified"
         and j["confidence"] >= CONFIDENCE_THRESHOLD
+        and j["thematic_fit"]                          # §7.2: redundant thematic-fit guard
         and not j["failed_dealbreakers"]
         and not j["missing_hard_requirements"]
         and ej.get("requirements") is not None        # §7.1: full JD parsed

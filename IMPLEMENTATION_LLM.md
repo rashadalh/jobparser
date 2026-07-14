@@ -191,15 +191,20 @@ Truncate `jd_text` to `MAX_JD_CHARS` (60000).
 
 ## `fit_judge.py` — `_call(LLM_NODES["judge"], …, FitJudgment, "JUDGE_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): GLM 5.2, temp 0.2, `max_tokens` 10000, reasoning **low**
-(the one node where reasoning earns its keep; its ceiling covers reasoning + JSON).
+Defaults (env-overridable, SPEC §6.3): GLM 5.2, temp 0.2, `max_tokens` 10000, reasoning
+**medium** (the one node where reasoning earns its keep; its ceiling covers reasoning +
+JSON — bumped from `low`: thematic/functional fit needs more than mechanical skill-list
+matching).
 
 ```python
 def judge_fit(profile: ResumeProfile, requirements: JobRequirements) -> FitJudgment
 ```
 Logic decision (SPEC §3.6). System prompt: compare `profile.evidence`/skills
-against `requirements`; `decision="qualified"` only if no `failed_dealbreakers` and
-no `missing_hard_requirements`; **cite** a `MetRequirement.evidence_quote` (verbatim
+against `requirements`; `decision="qualified"` only if no `failed_dealbreakers`, no
+`missing_hard_requirements`, and `thematic_fit` is true (the JD's actual function/subject
+matter matches the candidate's target roles/domains — checked using `relevant_years_experience`,
+not the domain-blind `profile.total_years_experience`, see SPEC §3.6); **cite** a
+`MetRequirement.evidence_quote` (verbatim
 resume span) for each required skill counted as met; set `confidence` honestly
 (displayed jobs require ≥ 0.75, SPEC §6.1 — but the judge sets confidence on merit,
 the gate is applied by code in `aggregate_matches`, SPEC §7). Pass both objects as
@@ -212,9 +217,9 @@ JSON in the user message.
   (extra="forbid" — set `model_config = ConfigDict(extra="forbid")` on `AdzunaQuery`
   so the planner can't smuggle params); `FitJudgment` rejects `confidence` > 1.
 - The four agent functions are import-clean and type-check (`uv run mypy --strict`).
-- Config: with `LLM_MAX_TOKENS_JUDGE=123` and `LLM_REASONING_JUDGE=medium` set,
-  `config.LLM_NODES["judge"]` reflects `max_tokens==123` / `reasoning=="medium"`;
-  unset → defaults (10000 / `low`). `_reasoning_body("off")` →
+- Config: with `LLM_MAX_TOKENS_JUDGE=123` and `LLM_REASONING_JUDGE=high` set,
+  `config.LLM_NODES["judge"]` reflects `max_tokens==123` / `reasoning=="high"`;
+  unset → defaults (10000 / `medium`). `_reasoning_body("off")` →
   `{"reasoning":{"enabled":False}}`; `_reasoning_body("low")` →
   `{"reasoning":{"effort":"low"}}`.
 - Truncation guard: a faked completion with `finish_reason=="length"` raises

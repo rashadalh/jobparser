@@ -7,9 +7,10 @@ LLM/boundary/run models (SPEC §3.4–§3.6, §3.8.2–§3.10, §5.2) are append
 All on-disk and on-the-wire JSON is snake_case (SPEC §10, item 1).
 """
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from jdparser.config import (
     ADZUNA_DEFAULT_RESULTS_PER_PAGE,
@@ -59,6 +60,19 @@ class Fingerprint(BaseModel):
     cache_key: str
 
 
+# --- Candidate notes (feedback distillation) ---------------------------------
+class CandidateNote(BaseModel):
+    note: str
+    kind: Literal["dealbreaker", "preference", "context"]
+    source: str   # e.g. "feedback on 'Senior SWE @ Acme'"
+
+
+class CandidateNotes(BaseModel):
+    """instructor wrapper: response_model must be a single schema (IMPLEMENTATION_LLM)."""
+
+    notes: list[CandidateNote]
+
+
 # --- §3.7 StoredResumeProfile (durable cache record) -------------------------
 class StoredResumeProfile(BaseModel):
     id: str
@@ -70,6 +84,7 @@ class StoredResumeProfile(BaseModel):
     model: str
     created_at: str
     updated_at: str
+    notes: list[CandidateNote] = []  # candidate-corrected feedback (no SCHEMA_VERSION bump — default-safe)
 
 
 # --- §3.4 AdzunaQuery (logic — gemini-3.1-flash-lite) — closed schema ----------------------
@@ -111,6 +126,16 @@ class JobScreen(BaseModel):
 
 
 # --- §3.5 JobRequirements (text extraction — Gemini 3.1 Flash Lite) ----------
+# Anchored on "years ... experience", NOT bare "\d+\s*years?" — this domain is
+# quant-finance, where "10-year Treasury" / "2-year note" / "5-year CDS" are
+# legitimate required skills, not duration-of-experience claims. Requiring
+# "experience" adjacent targets only the actual bug pattern ("N+ years of work
+# experience in X") and leaves tenor language alone.
+_YEARS_EXPERIENCE_CLAUSE = re.compile(
+    r"\b\d+\+?\s*years?\s+(?:of\s+)?(?:work\s+)?experience\b", re.IGNORECASE
+)
+
+
 class JobRequirements(BaseModel):
     required_skills: list[str]
     preferred_skills: list[str]
@@ -123,6 +148,18 @@ class JobRequirements(BaseModel):
     dealbreakers: list[str]
     employment_type: EmploymentType | None
 
+    @field_validator("required_skills")
+    @classmethod
+    def _no_embedded_duration_clause(cls, skills: list[str]) -> list[str]:
+        for s in skills:
+            if _YEARS_EXPERIENCE_CLAUSE.search(s):
+                raise ValueError(
+                    f"{s!r} embeds a years-of-experience duration clause — move the "
+                    "number into min_years_experience and keep only the skill/domain "
+                    "description here (no digit + 'year(s) ... experience' phrase)."
+                )
+        return skills
+
 
 # --- §3.6 FitJudgment (logic — gemini-3.1-flash-lite) --------------------------------------
 FitDecision = Literal["qualified", "not_qualified", "uncertain"]
@@ -134,6 +171,15 @@ class MetRequirement(BaseModel):
 
 
 class FitJudgment(BaseModel):
+    # Forced-sequencing fields (declared before `decision` so structured-output field
+    # order pushes the model to commit to these BEFORE it computes the final decision —
+    # otherwise it tends to reach `decision` via raw skill/years matching and rationalize
+    # thematic fit as an afterthought):
+    thematic_fit: bool               # same profession/specialization as the candidate's target roles/domains?
+    relevant_years_experience: float # years from work_periods actually in THIS JD's specialization —
+    #                                  derived by the model from titles/orgs/skills, NOT profile.total_years_experience
+    #                                  (that figure is a domain-blind career-wide total; see fit_judge.py THEMATIC FIT)
+    thematic_rationale: str          # which work_periods/skills were counted and why the specialization does/doesn't match
     decision: FitDecision
     confidence: float = Field(ge=0.0, le=1.0)
     met_requirements: list[MetRequirement]
@@ -206,6 +252,11 @@ class RunRecord(BaseModel):
     created_at: str
     updated_at: str
     resume_cache_hit: bool | None
+    resume_cache_key: str | None = None   # candidate identity (cache_key) this run belongs to
+    # live progress (written mid-run by the streaming executor; None until first update).
+    phase: str | None = None              # human label for the current pipeline stage
+    jobs_total: int | None = None         # jobs entering the eval fan-out (known after screen)
+    jobs_done: int | None = None          # jobs evaluated so far (drives the progress bar)
     # reason: heterogeneous JSON passthrough (ResumeProfile.model_dump(); §5.2)
     resume_profile: dict[str, Any] | None = None  # what the profiler extracted (audit/transparency)
     # reason: heterogeneous JSON passthrough (SPEC §3.8.1/§5.2)

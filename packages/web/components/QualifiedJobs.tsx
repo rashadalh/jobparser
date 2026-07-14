@@ -4,7 +4,7 @@ import JobCard from "./JobCard";
 // Recruitment-agency listings are filtered at the relevance screen (only present here when
 // the run opted in via "Include recruitment agencies"). When present, they're deprioritized
 // to the end of the list and badged; the agency relevance decision lives server-side.
-export default function QualifiedJobs({ jobs }: { jobs: EvaluatedJob[] }) {
+export default function QualifiedJobs({ jobs, runId }: { jobs: EvaluatedJob[]; runId: string }) {
   const isAgency = (jb: EvaluatedJob) => jb.is_recruitment_agency === true;
   const ordered = [...jobs.filter((j) => !isAgency(j)), ...jobs.filter(isAgency)];
   const agencyCount = jobs.filter(isAgency).length;
@@ -31,7 +31,7 @@ export default function QualifiedJobs({ jobs }: { jobs: EvaluatedJob[] }) {
       ) : (
         <div className="space-y-4">
           {ordered.map((job) => (
-            <JobCard key={job.job_id} job={job} />
+            <JobCard key={job.job_id} job={job} runId={runId} />
           ))}
         </div>
       )}

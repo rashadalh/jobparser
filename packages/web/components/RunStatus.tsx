@@ -33,11 +33,28 @@ export default function RunStatus({
     const label =
       run.status === "pending"
         ? "Queued — preparing your run…"
-        : "Matching jobs against your resume…";
+        : run.phase ?? "Matching jobs against your resume…";
+    // Show a progress bar once the eval fan-out size is known (jobs_total > 0).
+    const showBar = run.jobs_total != null && run.jobs_total > 0;
+    const done = run.jobs_done ?? 0;
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-        <Spinner />
-        <span>{label}</span>
+      <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
+        <div className="flex items-center gap-3">
+          <Spinner />
+          <span>{label}</span>
+        </div>
+        {showBar && (
+          <div className="mt-3">
+            <progress
+              value={done}
+              max={run.jobs_total!}
+              className="h-2 w-full [&::-webkit-progress-bar]:rounded [&::-webkit-progress-bar]:bg-gray-100 [&::-webkit-progress-value]:rounded [&::-webkit-progress-value]:bg-gray-700 [&::-moz-progress-bar]:bg-gray-700"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Evaluated {done} of {run.jobs_total} jobs
+            </p>
+          </div>
+        )}
       </div>
     );
   }

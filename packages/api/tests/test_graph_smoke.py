@@ -26,6 +26,7 @@ from jdparser.graph.state import JobMatchState
 from jdparser.graph.subgraph import _evaluated_job
 from jdparser.llm.schemas import (
     AdzunaQuery,
+    CandidateNote,
     FetchResult,
     FitJudgment,
     JobRequirements,
@@ -99,6 +100,9 @@ def _judgment(decision: str, confidence: float) -> dict[str, Any]:
         else []
     )
     return FitJudgment(
+        thematic_fit=True,
+        relevant_years_experience=6.0,
+        thematic_rationale="r",
         decision=decision,  # type: ignore[arg-type]  # reason: test feeds the Literal value
         confidence=confidence,
         met_requirements=met,
@@ -183,11 +187,17 @@ def _fake_parse(jd_text: str, company: str = "") -> JobRequirements:
 
 
 def _fake_judge(
-    profile: ResumeProfile, requirements: JobRequirements, job_title: str = ""
+    profile: ResumeProfile,
+    requirements: JobRequirements,
+    job_title: str = "",
+    notes: list[CandidateNote] = [],
 ) -> FitJudgment:
     outcome = requirements.required_skills[0]
     if outcome == "qualified":
         return FitJudgment(
+            thematic_fit=True,
+            relevant_years_experience=6.0,
+            thematic_rationale="same specialization",
             decision="qualified",
             confidence=0.9,
             met_requirements=[MetRequirement(requirement="python", evidence_quote="6 years building backends")],
@@ -197,6 +207,9 @@ def _fake_judge(
         )
     if outcome == "uncertain":
         return FitJudgment(
+            thematic_fit=True,
+            relevant_years_experience=6.0,
+            thematic_rationale="same specialization",
             decision="uncertain",
             confidence=0.9,
             met_requirements=[],
@@ -205,6 +218,9 @@ def _fake_judge(
             rationale="unclear",
         )
     return FitJudgment(
+        thematic_fit=True,
+        relevant_years_experience=6.0,
+        thematic_rationale="same specialization",
         decision="not_qualified",
         confidence=0.9,
         met_requirements=[],
@@ -268,7 +284,7 @@ def run_graph(
         "jdparser.graph.nodes.plan_adzuna_queries", lambda profile: [AdzunaQuery(what="engineer")]
     )
     monkeypatch.setattr("jdparser.graph.nodes.run_search_plan", lambda plan: list(jobs))
-    monkeypatch.setattr("jdparser.graph.nodes.screen_relevance", screen)
+    monkeypatch.setattr("jdparser.graph.nodes.screen_relevance_batched", screen)
     # subgraph stages
     monkeypatch.setattr("jdparser.graph.subgraph.resolve_final_url", resolve)
     monkeypatch.setattr("jdparser.graph.subgraph.fetch", fetch_fn)
@@ -459,7 +475,10 @@ def test_search_locations_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_location_override_used_verbatim(monkeypatch: pytest.MonkeyPatch) -> None:
     """An explicit location override is applied VERBATIM as `where` (a state like "TX" is
-    NOT narrowed to a city), distance is cleared, and broaden adds one nationwide query."""
+    NOT narrowed to a city) to EVERY query — including ones the planner itself already
+    left nationwide (regression: broaden=True used to leave those nationwide untouched,
+    silently ignoring the override for most of the plan) — distance is cleared, and
+    broaden adds exactly one extra nationwide query on top."""
     from jdparser.graph import nodes
 
     def _planner(profile: ResumeProfile) -> list[AdzunaQuery]:
@@ -477,7 +496,9 @@ def test_location_override_used_verbatim(monkeypatch: pytest.MonkeyPatch) -> Non
     state["search_locations"] = ["TX"]
     state["broaden_search"] = True
     plan = nodes.plan_searches(state)["search_plan"]
-    assert [q["where"] for q in plan] == ["TX", "TX", None]      # verbatim TX, +1 nationwide
+    # every original query scoped to "TX" verbatim (including the planner's nationwide
+    # one), plus one additional nationwide query appended for breadth
+    assert [q["where"] for q in plan] == ["TX", "TX", "TX", None]
     assert all(q.get("distance") is None for q in plan)          # radius cleared for statewide
 
     state["broaden_search"] = False                              # strict: no nationwide

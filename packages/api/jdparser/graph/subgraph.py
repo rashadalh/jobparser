@@ -30,6 +30,7 @@ from jdparser.graph.state import JobEvalState
 from jdparser.llm.fit_judge import judge_fit
 from jdparser.llm.jd_parser import parse_jd_requirements
 from jdparser.llm.schemas import (
+    CandidateNote,
     ErrorRecord,
     EvaluatedJob,
     FailureStage,
@@ -187,7 +188,8 @@ def judge_fit_node(state: JobEvalState) -> NodeResult:
         profile = ResumeProfile.model_validate(state["profile"])    # injected via Send (SPEC §3.2)
         req = JobRequirements.model_validate(raw_req)
         title = state["job"].get("title") or ""          # job title is the clearest seniority signal
-        j = judge_fit(profile, req, title)               # gemini-3.1-flash-lite
+        notes = [CandidateNote.model_validate(n) for n in state.get("notes", [])]
+        j = judge_fit(profile, req, title, notes)         # gemini-3.1-flash-lite
         return {"judgment": j.model_dump()}
     except JDParserError as e:
         return {"result": [_fail(state, "judge", e)]}

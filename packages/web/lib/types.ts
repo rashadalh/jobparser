@@ -3,6 +3,7 @@ export type JobStatus = "qualified" | "not_qualified" | "uncertain" | "failed";
 
 export interface MetRequirement { requirement: string; evidence_quote: string; }
 export interface FitJudgment {
+  thematic_fit: boolean; relevant_years_experience: number; thematic_rationale: string;
   decision: FitDecision; confidence: number;
   met_requirements: MetRequirement[]; missing_hard_requirements: string[];
   failed_dealbreakers: string[]; rationale: string;
@@ -25,6 +26,9 @@ export interface EvaluatedJob {
 export interface ErrorRecord {
   job_id: string | null; stage: string; code: string;
   message: string; detail: Record<string, unknown> | null;
+}
+export interface CandidateNote {
+  note: string; kind: "dealbreaker" | "preference" | "context"; source: string;
 }
 export interface ResumeEvidence { claim: string; source_quote: string; }
 export interface WorkPeriod {
@@ -64,6 +68,9 @@ export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {
   run_id: string; user_id: string; status: RunStatus;
   created_at: string; updated_at: string; resume_cache_hit: boolean | null;
+  resume_cache_key: string | null;
+  // live progress (populated while status is "running"; null on older/finished runs)
+  phase: string | null; jobs_total: number | null; jobs_done: number | null;
   resume_profile: ResumeProfile | null;
   qualified_jobs: EvaluatedJob[]; failures: EvaluatedJob[];
   rejected: EvaluatedJob[]; errors: ErrorRecord[];

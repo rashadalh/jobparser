@@ -22,10 +22,19 @@ RUN uv sync --frozen --no-install-project --no-dev
 #    chromium system libraries; the browser build matches the pinned playwright 1.60.0.
 #    Call the venv binary directly (not `uv run`, which would re-sync the dev group).
 RUN /app/.venv/bin/playwright install --with-deps chromium
+# Xvfb: some anti-bot WAFs block Playwright's headless Chromium outright but allow
+# identical headed automation from the SAME IP (confirmed empirically, not theoretical
+# — see extract/fetch.py's headed-retry escalation). Headed mode needs a real display,
+# which a container doesn't have without one; explicit install (not relying on it being
+# a transitive dep of --with-deps, which could change).
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb \
+    && rm -rf /var/lib/apt/lists/*
 
 # 3) Application source + editable project install.
 COPY jdparser ./jdparser
 RUN uv sync --frozen --no-dev
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 # data/ (resume cache, run records, uploads) — also created at import by config.py;
 # mounted as a volume in compose so it persists across restarts.
@@ -33,4 +42,5 @@ RUN mkdir -p data/profiles data/runs data/uploads
 
 EXPOSE 8000
 # Secrets (OPENROUTER/ADZUNA keys) and WEB_ORIGIN are injected at runtime via compose.
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["uv", "run", "uvicorn", "jdparser.server:app", "--host", "0.0.0.0", "--port", "8000"]

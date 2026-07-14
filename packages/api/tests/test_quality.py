@@ -64,3 +64,18 @@ def test_nav_link_only_lines_count_as_boilerplate() -> None:
     nav = "\n".join(["Home", "About", "Careers", "Blog", "Contact", "Press", "Login"] * 4)
     result = check_quality(nav)
     assert "JD_NOISY" in result.reasons
+
+
+def test_real_jd_ending_in_copyright_line_is_not_noisy() -> None:
+    """A real, complete JD extracted as ONE long line (no paragraph breaks preserved)
+    that happens to END in a standard copyright footer must NOT be flagged JD_NOISY —
+    the boilerplate phrase is a small fragment of an otherwise-legitimate long line, not
+    a standalone nav/footer line (regression: Goldman Sachs quant-developer posting)."""
+    jd = (
+        (CLEAN_JD.replace("\n", " ") + " ") * 3
+        + "© Acme Corp, 2026. All rights reserved."
+    )
+    assert len(jd) >= MIN_JD_CHARS
+    result = check_quality(jd)
+    assert result.passed is True
+    assert result.reasons == []

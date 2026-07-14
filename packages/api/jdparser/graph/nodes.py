@@ -39,7 +39,7 @@ from jdparser.llm.schemas import (
     ResumeProfile,
     StoredResumeProfile,
 )
-from jdparser.llm.screener import screen_relevance
+from jdparser.llm.screener import screen_relevance_batched
 from jdparser.llm.search_planner import plan_adzuna_queries
 from jdparser.resume.extract_text import extract_text
 
@@ -75,6 +75,7 @@ def load_or_parse_profile(state: JobMatchState) -> NodeResult:
         return {
             "resume_profile": existing.profile.model_dump(),
             "resume_cache_hit": True,
+            "candidate_notes": [n.model_dump() for n in existing.notes],
         }
     text = state["resume_text"]
     assert text is not None
@@ -116,30 +117,25 @@ def _apply_location_override(
     The planner LLM otherwise "normalizes" a user's location (e.g. narrows the whole
     state "TX" to "Austin, TX"), defeating a broad search. So when the user supplies
     locations we keep the planner's role-variety (`what`/`what_or`/`what_exclude`) but
-    deterministically reassign geography: each role query is scoped to the override's
-    GEOGRAPHIC values (used exactly as given, cycled), with `distance` cleared so a
-    state isn't shrunk to a radius. A remote/anywhere value (or `broaden=True`) adds one
-    nationwide (where-less) query. A purely-remote override makes every query nationwide.
+    deterministically reassign geography: EVERY role query is scoped to the override's
+    GEOGRAPHIC values (used exactly as given, cycled) — the planner's own `where`/
+    nationwide choices are discarded entirely, not just the queries it happened to leave
+    where-less (a prior version only reassigned already-`where`-scoped queries and left
+    everything else at the planner's own nationwide default, which silently ignored the
+    override for most of the plan whenever `broaden=True` — the frontend's default). With
+    `distance` cleared so a state isn't shrunk to a radius. A remote/anywhere value (or
+    `broaden=True`) then adds ONE nationwide (where-less) query on top, for breadth. A
+    purely-remote override makes every query nationwide.
     """
     geo = [loc for loc in locations if _is_geographic(loc)]
     has_remote = any(not _is_geographic(loc) for loc in locations)
     if not geo:                                          # purely remote -> all nationwide
         return [q.model_copy(update={"where": None, "distance": None}) for q in plan]
-    keep_nationwide = broaden or has_remote
-    out: list[AdzunaQuery] = []
-    gi = 0                                               # cursor over the override's geo values
-    saw_nationwide = False
-    for q in plan:
-        if q.where:                                      # planner-scoped -> override geo verbatim
-            out.append(q.model_copy(update={"where": geo[gi % len(geo)], "distance": None}))
-            gi += 1
-        elif keep_nationwide:                            # planner-nationwide -> keep nationwide
-            out.append(q.model_copy(update={"where": None, "distance": None}))
-            saw_nationwide = True
-        else:                                            # strict -> pull nationwide into the geo
-            out.append(q.model_copy(update={"where": geo[gi % len(geo)], "distance": None}))
-            gi += 1
-    if keep_nationwide and not saw_nationwide:           # guarantee one nationwide query for breadth
+    out = [
+        q.model_copy(update={"where": geo[i % len(geo)], "distance": None})
+        for i, q in enumerate(plan)
+    ]
+    if broaden or has_remote:                            # add one nationwide query for breadth
         out = out[: SEARCH_PLAN_MAX_QUERIES - 1] + [
             plan[0].model_copy(update={"where": None, "distance": None})
         ]
@@ -235,7 +231,7 @@ def screen_jobs(state: JobMatchState) -> NodeResult:
     errors: list[dict[str, Any]] = []
     agency_ids: set[str] = set()
     try:
-        result = screen_relevance(profile, jobs)               # llm/screener.py (Gemini Flash Lite)
+        result = screen_relevance_batched(profile, jobs)       # llm/screener.py (batched, Gemini Flash Lite)
         ranked_ids = result.relevant_job_ids                   # most-relevant-first (screener contract)
         agency_ids = set(result.agency_job_ids)
     except JDParserError as e:
@@ -286,7 +282,15 @@ def screen_jobs(state: JobMatchState) -> NodeResult:
 def evaluate_jobs(state: JobMatchState) -> list[Send]:          # conditional edge fn, fan-out
     # inject the profile into each worker payload (SPEC §3.2, §4.1)
     return [
-        Send("job_eval", {"job": j, "profile": state["resume_profile"], "result": []})
+        Send(
+            "job_eval",
+            {
+                "job": j,
+                "profile": state["resume_profile"],
+                "notes": state.get("candidate_notes", []),
+                "result": [],
+            },
+        )
         for j in state["deduped_jobs"]
     ]
 
@@ -312,6 +316,7 @@ def is_qualified(ej: dict[str, Any]) -> bool:  # reason: EvaluatedJob.model_dump
         and j is not None
         and j["decision"] == "qualified"
         and j["confidence"] >= CONFIDENCE_THRESHOLD
+        and j["thematic_fit"]
         and not j["failed_dealbreakers"]
         and not j["missing_hard_requirements"]
         and ej.get("requirements") is not None        # §7.1: full JD parsed

@@ -8,7 +8,7 @@ them to ``ErrorRecord.code``); it never raises. ``JD_TOO_SHORT`` (the
 
 import re
 
-from jdparser.config import JD_BOILERPLATE_MAX_RATIO, MIN_JD_CHARS
+from jdparser.config import BOILERPLATE_LINE_MAX_WORDS, JD_BOILERPLATE_MAX_RATIO, MIN_JD_CHARS
 from jdparser.llm.schemas import QualityResult
 
 # Small, tunable nav/footer boilerplate substrings (matched case-insensitively).
@@ -26,13 +26,21 @@ _SENTENCE_PUNCT = re.compile(r"[.!?:;,]")
 
 
 def _is_boilerplate(line: str) -> bool:
-    """Heuristic: is a non-empty line nav/footer boilerplate rather than JD prose?"""
+    """Heuristic: is a non-empty line nav/footer boilerplate rather than JD prose?
+
+    Extraction sometimes collapses an entire JD into one long "line" with no breaks
+    (no separator between paragraphs) — a real, complete posting can legitimately END
+    in a copyright line ("...All rights reserved."). The substring check below is only
+    applied to lines at or under BOILERPLATE_LINE_MAX_WORDS, so a boilerplate phrase
+    merely PRESENT somewhere inside a long paragraph of real prose doesn't condemn the
+    whole line — only a genuinely short, standalone nav/footer line does.
+    """
+    words = line.split()
     lowered = line.lower()
-    if any(pattern in lowered for pattern in _BOILERPLATE_PATTERNS):
+    if len(words) <= BOILERPLATE_LINE_MAX_WORDS and any(p in lowered for p in _BOILERPLATE_PATTERNS):
         return True
     # Nav-link-only line: very short and lacking any sentence punctuation
     # (real JD bullets/sentences run longer or carry ':'/',' etc.).
-    words = line.split()
     return 1 <= len(words) <= 3 and not _SENTENCE_PUNCT.search(line)
 
 

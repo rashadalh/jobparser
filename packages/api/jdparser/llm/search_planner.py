@@ -5,7 +5,7 @@ reasoning off. response_model is the `SearchPlan` wrapper; returns its `queries`
 truncated to SEARCH_PLAN_MAX_QUERIES. Maps validation failure -> PLAN_INVALID.
 """
 
-from jdparser.config import LLM_NODES, SEARCH_PLAN_MAX_QUERIES
+from jdparser.config import ADZUNA_MAX_PAGES, LLM_NODES, SEARCH_PLAN_MAX_QUERIES
 from jdparser.llm.client import _call
 from jdparser.llm.schemas import AdzunaQuery, ResumeProfile, SearchPlan
 
@@ -77,18 +77,29 @@ location preference is remote/non-geographic, OMIT `where` entirely for that que
 (this performs a nationwide search). Set `distance` (km) only alongside a real `where`.
 - ALWAYS include at least one nationwide query (no `where` at all) so remote-friendly \
 candidates get broad coverage.
-- Use `results_per_page` = 50 and `pages` = 1 for each query. Produce 5-6 queries: \
-several distinct role variants across the candidate's field (some `where`-scoped, at \
-least one nationwide), optionally using `what_or` on 1-2 of them for synonym coverage. \
-A cheap relevance screen filters these before the expensive evaluation, so broader \
-title coverage is good — just keep each query in-field.
+- Use `results_per_page` = 50 and `pages` = %(max_pages)d for each query (the full \
+depth every query is allowed — a query's result budget is `results_per_page` x `pages`, \
+FIXED regardless of geographic scope: a nationwide query does NOT get more results than \
+a city-scoped one, it spreads the SAME budget over a much larger area). Produce \
+%(max_queries)d queries: AS MANY genuinely DISTINCT role variants across the candidate's \
+field as you can justify (some `where`-scoped, at least one nationwide), optionally using \
+`what_or` on 1-2 of them for synonym coverage. A cheap relevance screen filters these \
+before the expensive evaluation, so broader title coverage is good — just keep each query \
+in-field.
+- NO GEOGRAPHIC PREFERENCE (empty/absent `locations`, or remote-only): because the result \
+budget is fixed per query and does not scale with area, a SINGLE nationwide query starves \
+a geographically-concentrated field (e.g. a specialty clustered in a few hub cities/ \
+metros, like quantitative finance in NYC/Chicago) — it spreads one query's worth of \
+results over the whole country. Compensate with QUANTITY: produce SEVERAL distinct \
+nationwide role-variant queries (up to the full query budget) instead of collapsing to \
+one or two, so the field gets multiple independent result budgets rather than one thin one.
 - Set employment-type booleans (`full_time`, etc.) ONLY when the candidate clearly \
 signals one preferred type, and use them sparingly — they drop jobs Adzuna hasn't \
 tagged.
 - Use ONLY the fields defined by the AdzunaQuery schema. Inventing any other \
 parameter is forbidden and will be rejected.
-- Produce between 1 and %d queries, ordered most-relevant first.
-""" % SEARCH_PLAN_MAX_QUERIES
+- Produce between 1 and %(max_queries)d queries, ordered most-relevant first.
+""" % {"max_pages": ADZUNA_MAX_PAGES, "max_queries": SEARCH_PLAN_MAX_QUERIES}
 
 
 def plan_adzuna_queries(profile: ResumeProfile) -> list[AdzunaQuery]:

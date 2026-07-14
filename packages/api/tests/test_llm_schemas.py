@@ -18,6 +18,8 @@ from jdparser.llm import client as client_mod
 from jdparser.llm.client import _call, _reasoning_body
 from jdparser.llm.schemas import (
     AdzunaQuery,
+    CandidateNote,
+    CandidateNotes,
     ErrorRecord,
     EvaluatedJob,
     Fingerprint,
@@ -69,6 +71,9 @@ def _requirements() -> JobRequirements:
 
 def _judgment() -> FitJudgment:
     return FitJudgment(
+        thematic_fit=True,
+        relevant_years_experience=5.0,
+        thematic_rationale="backend roles match the JD's function",
         decision="qualified",
         confidence=0.9,
         met_requirements=[MetRequirement(requirement="python", evidence_quote="python expert")],
@@ -110,9 +115,15 @@ def _run_record() -> RunRecord:
     )
 
 
+def _candidate_note() -> CandidateNote:
+    return CandidateNote(note="No active clearance", kind="dealbreaker", source="feedback on 'Acme SWE'")
+
+
 ALL_INSTANCES: list[BaseModel] = [
     ResumeEvidence(claim="c", source_quote="q"),
     _profile(),
+    _candidate_note(),
+    CandidateNotes(notes=[_candidate_note()]),
     Fingerprint(cache_key="c"),
     StoredResumeProfile(
         id="id-1",
@@ -157,6 +168,9 @@ def test_fit_judgment_confidence_bounds() -> None:
     """confidence must be within [0.0, 1.0] (SPEC §3.6)."""
     with pytest.raises(ValidationError):
         FitJudgment(
+            thematic_fit=True,
+            relevant_years_experience=5.0,
+            thematic_rationale="x",
             decision="qualified",
             confidence=1.5,
             met_requirements=[],
@@ -164,6 +178,64 @@ def test_fit_judgment_confidence_bounds() -> None:
             failed_dealbreakers=[],
             rationale="x",
         )
+
+
+def test_required_skills_rejects_embedded_duration_clause() -> None:
+    """A JD bullet like '5+ years of work experience in X' must not be smuggled into
+    `required_skills` as a single literal string — that duration half can never be
+    proven by a verbatim resume quote (see fit_judge.py MetRequirement.evidence_quote)."""
+    bad = _requirements().model_dump() | {
+        "required_skills": [
+            "5+ years of work experience in developing FO pricing models or market risk models"
+        ]
+    }
+    with pytest.raises(ValidationError):
+        JobRequirements.model_validate(bad)
+
+
+def test_required_skills_accepts_clean_skill_only_entry() -> None:
+    """No false rejection: a skill/domain description with no duration clause is fine."""
+    ok = _requirements().model_dump() | {
+        "required_skills": ["FO pricing models or market risk models development"]
+    }
+    reqs = JobRequirements.model_validate(ok)
+    assert reqs.required_skills == ["FO pricing models or market risk models development"]
+
+
+@pytest.mark.parametrize(
+    "skill",
+    [
+        "Trading experience with 2-year and 10-year Treasury futures",
+        "Knowledge of the 10-year Treasury yield curve",
+    ],
+)
+def test_required_skills_does_not_false_positive_on_instrument_tenor(skill: str) -> None:
+    """The whole reason the regex requires 'years' to be followed by 'experience':
+    quant-finance tenor language ('10-year Treasury', '2-year note') is a legitimate
+    required skill, not a duration-of-experience claim, and must not be rejected."""
+    reqs = JobRequirements.model_validate(_requirements().model_dump() | {"required_skills": [skill]})
+    assert reqs.required_skills == [skill]
+
+
+def test_stored_resume_profile_notes_default_and_old_shape_still_validates() -> None:
+    """`notes` defaults to [] so an old-shaped cached profile JSON (written before this
+    field existed) still validates without a SCHEMA_VERSION bump / cache invalidation."""
+    old_shaped = StoredResumeProfile(
+        id="id-1", user_id="local", cache_key="c", profile=_profile(),
+        parser_version="1.0.0", schema_version="1.0.0", model="z-ai/glm-5.2",
+        created_at="2026-06-26T00:00:00Z", updated_at="2026-06-26T00:00:00Z",
+    )
+    assert old_shaped.notes == []
+
+    old_json = old_shaped.model_dump()
+    del old_json["notes"]  # simulate a file written before the field existed
+    assert StoredResumeProfile.model_validate(old_json).notes == []
+
+
+def test_run_record_resume_cache_key_defaults_none() -> None:
+    rec = _run_record()
+    assert rec.resume_cache_key is None
+    assert RunRecord.model_validate(rec.model_dump() | {"resume_cache_key": "ck-1"}).resume_cache_key == "ck-1"
 
 
 def test_adzuna_query_defaults() -> None:
@@ -175,19 +247,19 @@ def test_adzuna_query_defaults() -> None:
 
 def test_config_env_override_and_restore() -> None:
     """LLM_NODES['judge'] reflects env overrides, then restores to defaults so other
-    tests / the live smoke see 10000 / 'low' (SPEC §6.3)."""
+    tests / the live smoke see 10000 / 'medium' (SPEC §6.3)."""
     os.environ["LLM_MAX_TOKENS_JUDGE"] = "123"
-    os.environ["LLM_REASONING_JUDGE"] = "medium"
+    os.environ["LLM_REASONING_JUDGE"] = "high"
     try:
         importlib.reload(jdparser.config)
         assert jdparser.config.LLM_NODES["judge"]["max_tokens"] == 123
-        assert jdparser.config.LLM_NODES["judge"]["reasoning"] == "medium"
+        assert jdparser.config.LLM_NODES["judge"]["reasoning"] == "high"
     finally:
         os.environ.pop("LLM_MAX_TOKENS_JUDGE", None)
         os.environ.pop("LLM_REASONING_JUDGE", None)
         importlib.reload(jdparser.config)
     assert jdparser.config.LLM_NODES["judge"]["max_tokens"] == 10000
-    assert jdparser.config.LLM_NODES["judge"]["reasoning"] == "low"
+    assert jdparser.config.LLM_NODES["judge"]["reasoning"] == "medium"
 
 
 def test_reasoning_body() -> None:

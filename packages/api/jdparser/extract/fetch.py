@@ -13,6 +13,7 @@ from jdparser.config import (
     FETCH_TIMEOUT_S,
     HTTP_MAX_RETRIES,
     HTTP_USER_AGENT,
+    JD_FETCH_REFERER,
     MIN_JD_CHARS,
     PLAYWRIGHT_TIMEOUT_MS,
     JDParserError,
@@ -42,21 +43,25 @@ def _looks_substantive(html: str) -> bool:
     return len(visible) >= MIN_JD_CHARS
 
 
-def _render(url: str) -> tuple[str, int, str]:
-    """Render ``url`` in headless chromium and return (html, status, final_url).
+def _render(url: str, *, headless: bool = True) -> tuple[str, int, str]:
+    """Render ``url`` in chromium and return (html, status, final_url).
 
     Launches one browser per call (simple + robust; a pool is a later
     optimization). Requires ``uv run playwright install chromium`` (BUILD.md);
     otherwise the launch raises and ``fetch`` surfaces ``FETCH_FAILED``.
+
+    ``headless=False`` requires a display (the container runs Xvfb + sets
+    ``DISPLAY`` at startup, see ``entrypoint.sh``) — reserved for the escalation
+    in ``fetch()`` below, not the default path.
     """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=headless)
         try:
             page = browser.new_page(user_agent=HTTP_USER_AGENT)
             response = page.goto(
-                url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT_MS
+                url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT_MS, referer=JD_FETCH_REFERER
             )
             status: int = response.status if response is not None else 200
             html: str = page.content()
@@ -67,16 +72,24 @@ def _render(url: str) -> tuple[str, int, str]:
 
 
 def fetch(url: str) -> FetchResult:
-    """Static-first, Playwright-fallback (SPEC §4.6).
+    """Static-first, Playwright-fallback, headed-retry-on-block (SPEC §4.6).
 
     1. httpx ``GET`` (``follow_redirects=True``, ``FETCH_TIMEOUT_S`` timeout,
        ``HTTP_MAX_RETRIES`` transport retries, ``HTTP_USER_AGENT``). If 2xx and
        :func:`_looks_substantive`, return ``FetchResult(source="http")``.
-    2. Otherwise render with Playwright and return ``FetchResult(source="playwright")``.
+    2. Otherwise render with headless Playwright.
+    3. If THAT render's status is not 2xx/3xx, retry ONCE with a non-headless
+       (headed) browser. Some anti-bot WAFs block Playwright's headless Chromium
+       outright (observed: Adzuna's own `/land/` pages return 403) while allowing
+       identical automation from the SAME IP when headed — confirmed empirically,
+       not theoretical. Headed rendering needs a real display and is heavier, so
+       it's a targeted last resort keyed on a blocked-looking STATUS, not on thin
+       content alone (a genuinely short JD is still a normal 2xx and never
+       triggers this — only the quality gate catches that case).
 
-    Raises ``JDParserError(code="FETCH_FAILED")`` if both paths fail (SPEC §6.4).
+    Raises ``JDParserError(code="FETCH_FAILED")`` if all paths fail (SPEC §6.4).
     """
-    headers = {"User-Agent": HTTP_USER_AGENT}
+    headers = {"User-Agent": HTTP_USER_AGENT, "Referer": JD_FETCH_REFERER}
 
     # (1) Static-first via httpx.
     try:
@@ -101,6 +114,9 @@ def fetch(url: str) -> FetchResult:
     # (2) Playwright fallback (renders JS-gated pages).
     try:
         html, status, final_url = _render(url)
+        if status >= 400:
+            # looked blocked/denied, not just thin — one targeted headed retry
+            html, status, final_url = _render(url, headless=False)
         return FetchResult(url=final_url, status=status, html=html, source="playwright")
     except Exception as exc:  # browser launch / nav / timeout failures
         raise JDParserError(code="FETCH_FAILED", message=str(exc)) from exc

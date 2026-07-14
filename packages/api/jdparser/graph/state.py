@@ -31,6 +31,7 @@ class JobMatchState(TypedDict):
     resume_fingerprint: str | None        # == cache_key (§3.7)
     resume_profile: _Json | None          # ResumeProfile.model_dump()
     resume_cache_hit: bool
+    candidate_notes: list[_Json]          # list[CandidateNote.model_dump()], threaded into the judge
 
     # --- discovery ---
     search_locations: list[str] | None    # per-run location override (None = use profile's inferred)
@@ -51,6 +52,12 @@ class JobMatchState(TypedDict):
 class JobEvalState(TypedDict):
     job: _Json                  # one deduped Adzuna job dict (§3.8.1)
     profile: _Json              # ResumeProfile.model_dump() injected via Send (§3.2)
+    # Named `notes`, NOT `candidate_notes`: a JobEvalState field sharing a JobMatchState
+    # channel's name gets auto-propagated back into that parent channel on every subgraph
+    # completion (same reason `profile` here isn't called `resume_profile` — see `job`/
+    # `evaluated_jobs` precedent). Same name across concurrent Send branches would collide
+    # on the parent's plain (non-reducer) `candidate_notes` channel -> InvalidUpdateError.
+    notes: _Json                 # list[CandidateNote.model_dump()] injected via Send (§3.2)
     final_url: str | None
     fetched: _Json | None       # FetchResult (§3.8.2)
     jd_text: str | None
@@ -70,6 +77,8 @@ def initial_state(
     user_id: str = "local",
     resume_file_path: str = "",
     resume_profile: _Json | None = None,
+    resume_fingerprint: str | None = None,  # seeded on the reuse-profile start mode (§4b)
+    candidate_notes: list[_Json] | None = None,
     search_locations: list[str] | None = None,
     broaden_search: bool = True,
     max_days_old: int | None = None,
@@ -81,9 +90,10 @@ def initial_state(
         "user_id": user_id,
         "resume_file_path": resume_file_path,
         "resume_text": None,
-        "resume_fingerprint": None,
+        "resume_fingerprint": resume_fingerprint,
         "resume_profile": resume_profile,
         "resume_cache_hit": resume_profile is not None,
+        "candidate_notes": candidate_notes or [],
         "search_locations": search_locations,
         "broaden_search": broaden_search,
         "max_days_old": max_days_old,

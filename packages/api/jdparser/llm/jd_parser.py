@@ -25,6 +25,10 @@ education; otherwise false (degrees listed as preferred go in `education` with \
 `education_required` false).
 - `min_years_experience`, `remote_allowed`, and `employment_type` are null unless \
 the JD states them.
+- When a bullet bundles a years-of-experience threshold WITH a skill/domain \
+description (e.g. "5+ years of experience in developing X"), put the number in \
+`min_years_experience` and ONLY the skill/domain description in `required_skills` \
+— never both in one `required_skills` string.
 - Output ONLY fields defined by the JobRequirements schema.
 """
 

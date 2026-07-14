@@ -34,7 +34,8 @@ from jdparser.config import (
     now_iso,
 )
 from jdparser.graph.build import build_graph
-from jdparser.graph.state import initial_state
+from jdparser.graph.state import JobMatchState, initial_state
+from jdparser.llm.feedback import distill_notes
 from jdparser.llm.resume_profiler import profile_resume
 from jdparser.llm.schemas import RunRecord, StoredResumeProfile
 from jdparser.resume.extract_text import extract_text
@@ -70,10 +71,51 @@ def _save_upload(file: UploadFile, run_id: str) -> str:
     return str(path)
 
 
+# Node -> human phase label for the progress display. Instant/internal nodes
+# (fingerprint_resume, dedupe_jobs) are omitted; the phase just holds the prior label.
+_PHASE_LABELS = {
+    "extract_resume_text": "Reading your resume",
+    "load_or_parse_profile": "Understanding your background",
+    "plan_searches": "Planning job searches",
+    "run_adzuna_search": "Searching job boards",
+    "screen_jobs": "Evaluating jobs against your resume",  # eval fan-out follows immediately
+    "aggregate_matches": "Compiling your matches",
+}
+
+
+def _stream_progress(run_id: str, init: JobMatchState, config: RunnableConfig) -> None:
+    """Run the graph via ``.stream()`` and write live progress into the run record.
+
+    ``stream_mode="updates"`` emits one chunk per completed node — including one per job
+    in the eval fan-out (verified: each ``Send`` to ``job_eval`` streams separately, not
+    batched). We turn those into a phase label plus a ``jobs_done``/``jobs_total`` count
+    the frontend renders as a progress bar. The final state is read afterward from the
+    checkpointer by the caller; this only drives the display.
+    """
+    total: int | None = None
+    done = 0
+    for chunk in _graph.stream(init, config=config, stream_mode="updates"):
+        node, update = next(iter(chunk.items()))
+        # dedupe_jobs sets the full pool; screen_jobs narrows it to the capped subset that
+        # actually fans out — whichever emits last is the true eval total.
+        if isinstance(update, dict) and update.get("deduped_jobs") is not None:
+            total = len(update["deduped_jobs"])
+        if node == "job_eval":  # one update per evaluated job
+            done += 1
+            # ponytail: one small run-record write per job (<= SCREEN_EVAL_CAP). Fine at
+            # MVP scale; debounce to every k-th job if the cap or run concurrency grows.
+            update_run(run_id, jobs_done=done, jobs_total=total)
+        elif node in _PHASE_LABELS:
+            extra = {"jobs_total": total, "jobs_done": 0} if node == "screen_jobs" else {}
+            update_run(run_id, phase=_PHASE_LABELS[node], **extra)
+
+
 def _execute(
     run_id: str,
     resume_path: str = "",
     profile: dict[str, Any] | None = None,  # reason: ResumeProfile.model_dump() reused from cache/DB
+    cache_key: str | None = None,           # profile's cache_key on the reuse start-mode (§4b)
+    notes: list[dict[str, Any]] | None = None,  # reason: CandidateNote.model_dump() list
     locations: list[str] | None = None,     # per-run location override (None = inferred)
     broaden: bool = True,                   # False = strict locations (drop nationwide query)
     max_days_old: int | None = SEARCH_MAX_DAYS_OLD_DEFAULT,  # listing-age cap in days (0/None = any)
@@ -83,7 +125,10 @@ def _execute(
 
     Two start modes: from a freshly uploaded resume (``resume_path``), or from an
     already-parsed profile reused from the cache/DB (``profile``) — the latter skips the
-    resume-extraction/parsing stages (no re-parse; the resume nodes pass through).
+    resume-extraction/parsing stages (no re-parse; the resume nodes pass through). On the
+    reuse mode the graph never runs ``fingerprint_resume``, so ``cache_key``/``notes`` are
+    seeded here (see ``jdparser.graph.state.initial_state``); on a fresh upload the graph
+    derives both itself and these stay ``None``.
 
     On graph success the evaluated jobs are partitioned into the ``RunRecord`` audit
     buckets (``qualified_jobs`` / ``failures`` / ``rejected``) and non-fatal
@@ -96,6 +141,8 @@ def _execute(
         run_id,
         resume_file_path=resume_path,
         resume_profile=profile,            # pre-set -> resume stages pass through (no re-parse)
+        resume_fingerprint=cache_key,       # seeded on the reuse path (fingerprint_resume short-circuits)
+        candidate_notes=notes,
         search_locations=locations,        # user's location override for this run (or None)
         broaden_search=broaden,            # include the nationwide query unless strict
         max_days_old=max_days_old,         # listing-age cap in days (0/None = any age)
@@ -106,16 +153,32 @@ def _execute(
         "max_concurrency": EVAL_FANOUT_CONCURRENCY,
     }
     try:
-        final = _graph.invoke(init, config=config)
+        _stream_progress(run_id, init, config)
+        final = _graph.get_state(config).values  # final merged state from the checkpointer
         evaluated = final["evaluated_jobs"]
+        qualified = final["qualified_jobs"]
+        # `qualified` is is_qualified()'s STRICTER gate (SPEC §7), not just status=="qualified"
+        # — a job can have status=="qualified" (subgraph-level) yet fail is_qualified()'s extra
+        # checks (thematic_fit, jd_char_len, etc). `rejected` must be the complement of
+        # (qualified | failures), not an independent status-based re-filter, or such a job
+        # matches neither bucket and silently vanishes from every RunRecord audit list.
+        qualified_ids = {e["job_id"] for e in qualified}
+        failures = [e for e in evaluated if e["status"] == "failed"]
+        failure_ids = {e["job_id"] for e in failures}
+        rejected = [
+            e for e in evaluated if e["job_id"] not in qualified_ids and e["job_id"] not in failure_ids
+        ]
         update_run(
             run_id,
             status="completed",
             resume_cache_hit=final["resume_cache_hit"],
+            # always available here: set by fingerprint_resume on a fresh upload, or seeded
+            # above (cache_key) on the reuse path — the run's candidate identity (§4b).
+            resume_cache_key=final.get("resume_fingerprint"),
             resume_profile=final.get("resume_profile"),
-            qualified_jobs=final["qualified_jobs"],
-            failures=[e for e in evaluated if e["status"] == "failed"],
-            rejected=[e for e in evaluated if e["status"] in ("not_qualified", "uncertain")],
+            qualified_jobs=qualified,
+            failures=failures,
+            rejected=rejected,
             errors=final["errors"],
             screened_out=final.get("screened_out", []),
         )
@@ -168,6 +231,7 @@ async def start_run(
         create_run(run_id=run_id, user_id="local", resume_file_path="")
         background.add_task(
             _execute, run_id, profile=stored.profile.model_dump(),
+            cache_key=profile_id, notes=[n.model_dump() for n in stored.notes],
             locations=locs, broaden=broaden, max_days_old=age, include_agencies=include_agencies,
         )
     elif file is not None:
@@ -267,3 +331,41 @@ def read_run(run_id: str) -> RunRecord:
     if rec is None:
         raise HTTPException(status_code=404, detail="run not found")
     return rec
+
+
+@app.post("/api/feedback")
+def submit_feedback(
+    run_id: str = Form(...),
+    job_id: str = Form(...),
+    text: str = Form(...),
+) -> dict[str, Any]:
+    """Capture user feedback on a QUALIFIED job as a candidate note (keyed by the
+    resume's ``cache_key``), distilled into the candidate's existing note list.
+
+    Only qualified jobs are eligible (the false-positive case this feature targets —
+    a rejected/failed job has no "wrongly told me I qualify" to correct). Applies to
+    the candidate's NEXT run only; jobs already evaluated are never re-judged.
+    """
+    run = get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run.resume_cache_key is None:
+        raise HTTPException(status_code=400, detail="run has no resolvable candidate")
+    stored = get_profile(run.resume_cache_key)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="candidate profile not found")
+    job = next((j for j in run.qualified_jobs if j.get("job_id") == job_id), None)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found among this run's qualified jobs")
+    job_context = {
+        "title": job.get("title"),
+        "requirements": job.get("requirements"),
+        "rationale": (job.get("judgment") or {}).get("rationale"),
+    }
+    try:
+        notes = distill_notes(stored.notes, job_context, text)
+    except JDParserError as e:
+        raise HTTPException(status_code=400, detail=f"{e.code}: {e.message}")
+    updated = stored.model_copy(update={"notes": notes, "updated_at": now_iso()})
+    put_profile(updated)
+    return {"notes": [n.model_dump() for n in notes]}

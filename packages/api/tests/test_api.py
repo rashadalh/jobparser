@@ -13,6 +13,7 @@ the dirs stay at only ``.gitkeep``.
 
 import uuid
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -20,6 +21,8 @@ from fastapi.testclient import TestClient
 
 from jdparser import server
 from jdparser.config import RUNS_DIR, UPLOADS_DIR, JDParserError
+from jdparser.llm.schemas import CandidateNote, ResumeProfile, StoredResumeProfile
+from jdparser.runs.store import create_run
 
 client = TestClient(server.app)
 
@@ -57,6 +60,7 @@ _ADZUNA_ERROR = {
 def _final_state() -> dict[str, Any]:
     return {
         "resume_cache_hit": False,
+        "resume_fingerprint": "fake-cache-key",  # set by fingerprint_resume on a real run
         "resume_profile": {"roles": ["backend engineer"], "education": ["B.S. CS"]},
         "qualified_jobs": [_QUALIFIED],
         "evaluated_jobs": [_QUALIFIED, _FAILED, _REJECTED],
@@ -66,17 +70,26 @@ def _final_state() -> dict[str, Any]:
 
 
 class _FakeGraph:
-    """Stands in for the compiled LangGraph: returns a canned final state or raises."""
+    """Stands in for the compiled LangGraph: streams canned progress updates then
+    exposes a canned final state via ``get_state``, or raises during the stream."""
 
     def __init__(self, final: dict[str, Any] | None = None, exc: Exception | None = None) -> None:
         self._final = final
         self._exc = exc
 
-    def invoke(self, init: Any, config: Any = None) -> dict[str, Any]:
+    def stream(self, init: Any, config: Any = None, stream_mode: Any = None) -> Any:
         if self._exc is not None:
             raise self._exc
         assert self._final is not None
-        return self._final
+        evaluated = self._final["evaluated_jobs"]
+        # one screen_jobs update (sets the total) then one job_eval update per job
+        yield {"screen_jobs": {"deduped_jobs": evaluated}}
+        for job in evaluated:
+            yield {"job_eval": {"evaluated_jobs": [job]}}
+
+    def get_state(self, config: Any = None) -> Any:
+        assert self._final is not None
+        return SimpleNamespace(values=self._final)
 
 
 # --- cleanup: delete only the run/upload files each test creates --------------
@@ -119,6 +132,7 @@ def test_post_run_completes_and_partitions(
 
     assert rec["status"] == "completed"
     assert rec["resume_cache_hit"] is False
+    assert rec["resume_cache_key"] == "fake-cache-key"  # from final state's resume_fingerprint (§4b)
     assert rec["resume_profile"] == {"roles": ["backend engineer"], "education": ["B.S. CS"]}
     assert [s["title"] for s in rec["screened_out"]] == ["Grocery QA"]
 
@@ -134,6 +148,27 @@ def test_post_run_completes_and_partitions(
     # the faked Adzuna error rides in `errors` (audit), never in run-level `error`
     assert rec["error"] is None
     assert any(e["stage"] == "adzuna_search" and e["code"] == "ADZUNA_HTTP" for e in rec["errors"])
+
+
+# --- 1b. a job whose subgraph status=="qualified" but fails the STRICTER
+#     is_qualified() gate (SPEC §7 — e.g. thematic_fit=False) must land in `rejected`,
+#     not vanish from every bucket (the gap this test guards against). ------------
+def test_status_qualified_but_gated_lands_in_rejected(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    gated = _evaluated_job("job-q2", "qualified")  # status=="qualified", excluded from qualified_jobs below
+    final = _final_state()
+    final["evaluated_jobs"] = [*final["evaluated_jobs"], gated]  # qualified_jobs deliberately NOT updated
+    monkeypatch.setattr(server, "_graph", _FakeGraph(final=final))
+
+    resp = _post_run()
+    run_id = resp.json()["run_id"]
+    runs_cleanup.append(run_id)
+
+    rec = client.get(f"/api/runs/{run_id}").json()
+    assert [j["job_id"] for j in rec["qualified_jobs"]] == ["job-q"]  # unchanged
+    assert [j["job_id"] for j in rec["failures"]] == ["job-f"]        # unchanged
+    assert set(j["job_id"] for j in rec["rejected"]) == {"job-r", "job-q2"}  # job-q2 no longer lost
 
 
 # --- 2. unknown run -> 404 ----------------------------------------------------
@@ -219,3 +254,76 @@ def test_parse_only_returns_profile_without_search(monkeypatch: pytest.MonkeyPat
     assert body["profile"]["roles"] == ["backend engineer"]
     assert body["cache_key"] == "parse-test"
     assert called["n"] == 1  # profiler ran once; no graph/search was invoked
+
+
+# --- 6. POST /api/feedback -----------------------------------------------------
+def _stored_profile(cache_key: str, notes: list[CandidateNote] | None = None) -> StoredResumeProfile:
+    profile = ResumeProfile(
+        roles=["backend engineer"], skills=["python"], seniority="senior",
+        total_years_experience=5.0, work_periods=[], education=["B.S. CS"], domains=[],
+        work_authorization=[], locations=[], remote_preference="any",
+        employment_types=["full_time"], evidence=[],
+    )
+    return StoredResumeProfile(
+        id="id-1", user_id="local", cache_key=cache_key, profile=profile,
+        parser_version="1.0.0", schema_version="1.0.0", model="m",
+        created_at="t", updated_at="t", notes=notes or [],
+    )
+
+
+def _post_completed_run(monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]) -> str:
+    monkeypatch.setattr(server, "_graph", _FakeGraph(final=_final_state()))
+    resp = _post_run()
+    run_id = resp.json()["run_id"]
+    runs_cleanup.append(run_id)
+    return run_id
+
+
+def test_feedback_happy_path_distills_and_saves_notes(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    run_id = _post_completed_run(monkeypatch, runs_cleanup)  # resume_cache_key == "fake-cache-key"
+
+    stored = _stored_profile("fake-cache-key")
+    monkeypatch.setattr(server, "get_profile", lambda key: stored if key == "fake-cache-key" else None)
+    canned = [CandidateNote(note="No active clearance", kind="dealbreaker", source="feedback on 'Engineer job-q'")]
+    monkeypatch.setattr(server, "distill_notes", lambda existing, ctx, text: canned)
+    saved: dict[str, Any] = {}
+    monkeypatch.setattr(server, "put_profile", lambda rec: saved.__setitem__("record", rec))
+
+    resp = client.post(
+        "/api/feedback",
+        data={"run_id": run_id, "job_id": "job-q", "text": "I don't have an active clearance"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"notes": [n.model_dump() for n in canned]}
+    assert saved["record"].cache_key == "fake-cache-key"
+    assert saved["record"].notes == canned
+
+
+def test_feedback_unknown_run_404() -> None:
+    resp = client.post(
+        "/api/feedback", data={"run_id": str(uuid.uuid4()), "job_id": "job-q", "text": "x"}
+    )
+    assert resp.status_code == 404
+
+
+def test_feedback_run_without_cache_key_400(runs_cleanup: list[str]) -> None:
+    # a run predating this feature (or otherwise unresolvable) has no candidate identity
+    rec = create_run(run_id=str(uuid.uuid4()), user_id="local", resume_file_path="")
+    runs_cleanup.append(rec.run_id)
+    resp = client.post("/api/feedback", data={"run_id": rec.run_id, "job_id": "job-q", "text": "x"})
+    assert resp.status_code == 400
+
+
+def test_feedback_job_not_among_qualified_404(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    run_id = _post_completed_run(monkeypatch, runs_cleanup)
+    monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("fake-cache-key"))
+
+    # job-f is a FAILED job (in `failures`, not `qualified_jobs`) — out of scope by design
+    resp = client.post(
+        "/api/feedback", data={"run_id": run_id, "job_id": "job-f", "text": "not a fit"}
+    )
+    assert resp.status_code == 404

@@ -256,7 +256,7 @@ export default function Home() {
       )}
 
       {done && run && run.status === "completed" && (
-        <QualifiedJobs jobs={run.qualified_jobs} />
+        <QualifiedJobs jobs={run.qualified_jobs} runId={run.run_id} />
       )}
 
       {done && run && (
