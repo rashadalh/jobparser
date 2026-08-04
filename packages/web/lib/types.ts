@@ -43,9 +43,14 @@ export interface ResumeProfile {
   remote_preference: string; employment_types: string[];
   evidence: ResumeEvidence[];
 }
+// Mirrors jdparser/llm/schemas.py StoredResumeProfile. Hand-maintained (no codegen):
+// keep it complete — a partial mirror types the frontend against a lie, because the
+// missing fields DO arrive on the wire and TypeScript denies they exist.
 export interface StoredResumeProfile {
-  id: string; cache_key: string; profile: ResumeProfile;
+  id: string; user_id: string; cache_key: string; profile: ResumeProfile;
+  parser_version: string; schema_version: string;
   model: string; created_at: string; updated_at: string;
+  notes: CandidateNote[];
 }
 export interface ProfileSummary {
   cache_key: string; id: string; created_at: string; updated_at: string;

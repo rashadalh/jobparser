@@ -54,6 +54,45 @@ function ParsedRequirements({ req }: { req: JobRequirements | null }) {
   );
 }
 
+/** One bucket of jobs that never reached evaluation, with why. */
+function ScreenedSection({
+  title,
+  explainer,
+  jobs,
+}: {
+  title: string;
+  explainer: string;
+  jobs: ScreenedJob[];
+  /** Renders nothing when empty EXCEPT where a caller wants the "None" state — see
+   *  `alwaysShow` at the call site for off-field, the one bucket that reports zero. */
+}) {
+  return (
+    <section className="mt-4">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        {title} ({jobs.length})
+      </h4>
+      <p className="mt-0.5 text-xs text-gray-400">{explainer}</p>
+      {jobs.length === 0 ? (
+        <p className="mt-1 text-sm text-gray-400">None</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {jobs.map((s) => (
+            <li key={s.job_id} className="text-sm text-gray-700">
+              <span className="font-medium text-gray-900">{s.title}</span>
+              {s.company ? ` · ${s.company}` : ""}
+              {s.location ? (
+                <span className="text-gray-500"> · {s.location}</span>
+              ) : (
+                ""
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** A rejected job — the judge DID evaluate it; show its full reasoning. */
 function RejectedItem({ job }: { job: EvaluatedJob }) {
   const j = job.judgment;
@@ -241,83 +280,28 @@ export default function FailuresPanel({
         )}
       </section>
 
-      <section className="mt-4">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Filtered as off-field ({offField.length})
-        </h4>
-        <p className="mt-0.5 text-xs text-gray-400">
-          Dropped before evaluation as not in your field (a keyword match in an
-          unrelated industry/role), to keep the feed and cost focused.
-        </p>
-        {offField.length === 0 ? (
-          <p className="mt-1 text-sm text-gray-400">None</p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {offField.map((s) => (
-              <li key={s.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{s.title}</span>
-                {s.company ? ` · ${s.company}` : ""}
-                {s.location ? (
-                  <span className="text-gray-500"> · {s.location}</span>
-                ) : (
-                  ""
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* off-field always renders (its "None" is meaningful: nothing was dropped);
+          the other two appear only when non-empty, as before. */}
+      <ScreenedSection
+        title="Filtered as off-field"
+        explainer="Dropped before evaluation as not in your field (a keyword match in an unrelated industry/role), to keep the feed and cost focused."
+        jobs={offField}
+      />
 
       {overCap.length > 0 && (
-        <section className="mt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            In-field, not evaluated ({overCap.length})
-          </h4>
-          <p className="mt-0.5 text-xs text-gray-400">
-            Relevant to your field but past this run&apos;s evaluation budget (the
-            top matches were evaluated first). Re-run or narrow the search to reach
-            these.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {overCap.map((s) => (
-              <li key={s.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{s.title}</span>
-                {s.company ? ` · ${s.company}` : ""}
-                {s.location ? (
-                  <span className="text-gray-500"> · {s.location}</span>
-                ) : (
-                  ""
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ScreenedSection
+          title="In-field, not evaluated"
+          explainer="Relevant to your field but past this run's evaluation budget (the top matches were evaluated first). Re-run or narrow the search to reach these."
+          jobs={overCap}
+        />
       )}
 
       {agency.length > 0 && (
-        <section className="mt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Recruitment agencies, not evaluated ({agency.length})
-          </h4>
-          <p className="mt-0.5 text-xs text-gray-400">
-            In-field but screened out as third-party recruiter/staffing listings. Check
-            &ldquo;Include recruitment agencies&rdquo; in the search panel and re-run to
-            evaluate these.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {agency.map((s) => (
-              <li key={s.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{s.title}</span>
-                {s.company ? ` · ${s.company}` : ""}
-                {s.location ? (
-                  <span className="text-gray-500"> · {s.location}</span>
-                ) : (
-                  ""
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ScreenedSection
+          title="Recruitment agencies, not evaluated"
+          explainer="In-field but screened out as third-party recruiter/staffing listings. Check “Include recruitment agencies” in the search panel and re-run to evaluate these."
+          jobs={agency}
+        />
       )}
 
       <section className="mt-4">

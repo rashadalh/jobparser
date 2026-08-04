@@ -2,12 +2,12 @@ import type { EvaluatedJob } from "@/lib/types";
 import JobCard from "./JobCard";
 
 // Recruitment-agency listings are filtered at the relevance screen (only present here when
-// the run opted in via "Include recruitment agencies"). When present, they're deprioritized
-// to the end of the list and badged; the agency relevance decision lives server-side.
+// the run opted in via "Include recruitment agencies"). Both the agency decision AND the
+// deprioritize-to-the-tail ordering are server-side (graph/nodes.py screen_jobs) — this
+// component renders the order it is given rather than re-deriving it, so there is one
+// implementation of the rule instead of two that can drift apart.
 export default function QualifiedJobs({ jobs, runId }: { jobs: EvaluatedJob[]; runId: string }) {
-  const isAgency = (jb: EvaluatedJob) => jb.is_recruitment_agency === true;
-  const ordered = [...jobs.filter((j) => !isAgency(j)), ...jobs.filter(isAgency)];
-  const agencyCount = jobs.filter(isAgency).length;
+  const agencyCount = jobs.filter((j) => j.is_recruitment_agency === true).length;
 
   return (
     <section>
@@ -30,7 +30,7 @@ export default function QualifiedJobs({ jobs, runId }: { jobs: EvaluatedJob[]; r
         </p>
       ) : (
         <div className="space-y-4">
-          {ordered.map((job) => (
+          {jobs.map((job) => (
             <JobCard key={job.job_id} job={job} runId={runId} />
           ))}
         </div>
