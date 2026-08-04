@@ -235,15 +235,27 @@ export default function SavedPanel({
                   (off by default. Agency listings are filtered out before we evaluate them.)
                 </span>
               </label>
-
-              <CandidateNotes
-                cacheKey={selected}
-                notes={selectedProfile?.notes ?? []}
-                onNotesChange={updateSelectedNotes}
-                disabled={disabled}
-              />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Its own card, deliberately NOT inside the search-filter stack above. Nested in
+          there it rendered as a fifth filter: same small gray label, same indent, last in
+          a list of checkboxes. Nobody found it. This is a different concept (what the
+          matcher believes about you, persisting across every run) and it needs to look
+          like one. */}
+      {selected && (
+        <div
+          data-testid="candidate-notes-card"
+          className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+        >
+          <CandidateNotes
+            cacheKey={selected}
+            notes={selectedProfile?.notes ?? []}
+            onNotesChange={updateSelectedNotes}
+            disabled={disabled}
+          />
         </div>
       )}
 

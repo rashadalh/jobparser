@@ -63,12 +63,15 @@ export default function CandidateNotes({
   }
 
   return (
-    <details data-testid="candidate-notes" className="mt-3">
-      <summary className="cursor-pointer text-xs font-medium text-gray-600">
-        What the matcher knows about you ({notes.length})
+    <details data-testid="candidate-notes">
+      <summary className="cursor-pointer text-sm font-medium text-gray-700">
+        What the matcher knows about you{" "}
+        <span className="font-normal text-gray-500">
+          ({notes.length} {notes.length === 1 ? "note" : "notes"} from your feedback)
+        </span>
       </summary>
 
-      <p className="mt-1 text-xs text-gray-400">
+      <p className="mt-1.5 text-xs text-gray-500">
         Everything you&apos;ve told it, kept as a short summary rather than a running
         log. It applies to your next run, so nothing already evaluated changes.
       </p>
