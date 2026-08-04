@@ -1,14 +1,44 @@
 # REFACTOR AUDIT — jdparser
 
+> ## STATUS: EXECUTED — all 8 phases landed
+>
+> Branch `refactor/audit-938203f`, PR
+> [#1](https://github.com/rashadalh/jdparser/pull/1). Everything below is the plan as
+> approved — a record of what was decided and why, not work outstanding. Read it for the
+> **reasoning** behind a design; read `git log` for what shipped.
+>
+> | Phase | Commit | Findings |
+> |---|---|---|
+> | 0 — Land the audit | `1320b4c` | F6 (partial) |
+> | 1 — Dedupe null crash | `de67d7c` | F1 |
+> | 2 — `Job` domain model | `6033bdb` | F2 (shape leak) |
+> | 3 — Job-source seam | `1bbcb64` | F2 (naming, prompt) |
+> | 4 — Test structure | `424b13c` | F3, F13 |
+> | 5 — Prompts to files | `222054d` | F8, F14 |
+> | 6 — Web DRY + type drift | `0ef9bc3` | F9, F10, F11, F12 |
+> | 7 — Docs re-sync | `7b1ee50` | F4, F5, F6, F7, F15, F16 |
+>
+> Not fixed, by decision: **F16** (no split of `server.py`/`nodes.py` — revisit past ~500
+> lines) and **F17** (duplicate one-line `_WS` regex). Both have their reasoning in §2.
+>
+> Final state: `pytest` 149 passed (from 137), `mypy --strict` clean, `bun run typecheck`
+> and `bun run build` clean.
+>
+> **One deviation from the plan:** §5.4 Phase 4 specifies `tests/conftest.py`; the shared
+> builders shipped as `tests/builders.py` instead. They are plain functions, not pytest
+> fixtures or hooks, and importing names out of `conftest` works by sys.path accident
+> rather than by design.
+
 > **Pinned to commit `938203fd2f19f6e3e0f631f2963713b87229a42b`**
 > ("Fix match-quality bugs found via live testing; add candidate feedback loop", branch `main`).
-> Every `file:line` citation below refers to that tree. Later phases split and rename the
-> exact files earlier phases cite — if you are reading this after Phase 2 has landed, resolve
-> citations against the pinned SHA (`git show 938203f:<path>`), not against the working tree.
+> Every `file:line` citation below refers to that tree — **not** to HEAD. Phases 2–4 split,
+> renamed, and moved most of the files cited here (`adzuna/` → `jobsource/adzuna/`, the
+> prompts out of `llm/*.py`, `test_graph_smoke.py` four ways), so resolve any citation with
+> `git show 938203f:<path>` rather than opening the working tree and finding it changed.
 
-This document is written to be read **cold**, by an agent with no memory of the audit
-conversation. It contains everything needed to execute: findings, designs, phase order,
-branch/commit rules, and the exact verification commands per component.
+This document was written to be read **cold**, by an agent with no memory of the audit
+conversation: findings, designs, phase order, branch/commit rules, and the exact
+verification commands per component.
 
 ---
 
@@ -552,7 +582,12 @@ Pydantic (F11), and no second job source (§4.2).
 
 ## 5. Execution plan
 
-### 5.1 Workflow rules (binding — read before touching code)
+> **Completed.** These rules governed the eight commits listed at the top of this document;
+> they are not standing instructions. A fresh agent picking up new work should NOT check out
+> `refactor/audit-938203f` or continue its numbering — cut a new branch. The verification
+> commands in §5.2 remain current and are the reason this section is still worth reading.
+
+### 5.1 Workflow rules (as executed)
 
 - **Branch.** Work happens on `refactor/audit-938203f`, cut from `main`.
   *Idempotent:* `git rev-parse --verify refactor/audit-938203f` succeeds → `git checkout`
