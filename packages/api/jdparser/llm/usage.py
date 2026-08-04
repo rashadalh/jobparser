@@ -19,6 +19,18 @@ Cost comes from OpenRouter, not from a price table here. Asking for it (`usage.i
 returns what was actually charged, which stays correct when a model's price changes or
 when OpenRouter routes to a different upstream provider. A local table would be a second
 source of truth that silently goes stale.
+
+Verified against a live call (2026-08-04, google/gemini-3.1-flash-lite), because all of
+the below is provider behavior that unit tests with a fake completion cannot establish:
+
+- `usage.cost` is returned when `usage: {"include": true}` is sent.
+- **The unit is USD.** 131 prompt + 132 completion tokens reported `cost` 0.00023075,
+  exactly matching the published per-token pricing ($0.25 / $1.50 per 1M). Separately, a
+  call reporting 3.25e-06 moved the account's `/credits` `total_usage` by exactly
+  0.00000325 — same unit as billing. (`/credits` lags by more than a few seconds, so
+  don't expect an immediate delta.)
+- The OpenAI SDK surfaces it BOTH as `CompletionUsage.cost` and in `model_extra`, which
+  is why `record_completion` checks both rather than betting on one.
 """
 
 from contextvars import ContextVar
