@@ -8,24 +8,8 @@ import pytest
 
 from jdparser.config import JDParserError
 from jdparser.llm import screener as screener_mod
-from jdparser.llm.schemas import JobScreen, ResumeEvidence, ResumeProfile
-
-
-def _profile() -> ResumeProfile:
-    return ResumeProfile(
-        roles=["backend engineer"],
-        skills=["python"],
-        seniority="senior",
-        total_years_experience=8.0,
-        work_periods=[],
-        education=["B.S. Computer Science"],
-        domains=["fintech"],
-        work_authorization=["us_citizen"],
-        locations=["Austin, TX"],
-        remote_preference="remote",
-        employment_types=["full_time"],
-        evidence=[ResumeEvidence(claim="8 years", source_quote="8 years building payments")],
-    )
+from jdparser.llm.schemas import JobScreen, ResumeProfile
+from builders import profile as _profile
 
 
 def _jobs(n: int) -> list[dict[str, str]]:

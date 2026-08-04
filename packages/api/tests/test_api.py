@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from builders import profile, stored_profile
 from jdparser import server
 from jdparser.config import RUNS_DIR, UPLOADS_DIR, JDParserError
 from jdparser.llm.schemas import CandidateNote, ResumeProfile, StoredResumeProfile
@@ -252,12 +253,7 @@ def test_run_without_file_or_profile_400() -> None:
 def test_parse_only_returns_profile_without_search(monkeypatch: pytest.MonkeyPatch) -> None:
     from jdparser.llm.schemas import Fingerprint, ResumeProfile
 
-    prof = ResumeProfile(
-        roles=["backend engineer"], skills=["python"], seniority="senior",
-        total_years_experience=5.0, work_periods=[], education=["B.S. CS"], domains=[],
-        work_authorization=[], locations=[], remote_preference="any",
-        employment_types=["full_time"], evidence=[],
-    )
+    prof = profile()
     called = {"n": 0}
 
     def _prof(_text: str) -> ResumeProfile:
@@ -284,17 +280,7 @@ def test_parse_only_returns_profile_without_search(monkeypatch: pytest.MonkeyPat
 
 # --- 6. POST /api/feedback -----------------------------------------------------
 def _stored_profile(cache_key: str, notes: list[CandidateNote] | None = None) -> StoredResumeProfile:
-    profile = ResumeProfile(
-        roles=["backend engineer"], skills=["python"], seniority="senior",
-        total_years_experience=5.0, work_periods=[], education=["B.S. CS"], domains=[],
-        work_authorization=[], locations=[], remote_preference="any",
-        employment_types=["full_time"], evidence=[],
-    )
-    return StoredResumeProfile(
-        id="id-1", user_id="local", cache_key=cache_key, profile=profile,
-        parser_version="1.0.0", schema_version="1.0.0", model="m",
-        created_at="t", updated_at="t", notes=notes or [],
-    )
+    return stored_profile(cache_key=cache_key, notes=notes or [])
 
 
 def _post_completed_run(monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]) -> str:

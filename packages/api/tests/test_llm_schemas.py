@@ -15,6 +15,7 @@ from jdparser.config import (
     NodeCfg,
 )
 from jdparser.llm import client as client_mod
+from builders import profile as _profile, stored_profile
 from jdparser.llm.client import _call, _reasoning_body
 from jdparser.llm.schemas import (
     AdzunaQuery,
@@ -37,23 +38,6 @@ from jdparser.llm.schemas import (
 
 
 # --- minimal valid instances of every model ----------------------------------
-def _profile() -> ResumeProfile:
-    return ResumeProfile(
-        roles=["backend engineer"],
-        skills=["python"],
-        seniority="senior",
-        total_years_experience=8.0,
-        work_periods=[],
-        education=["B.S. Computer Science"],
-        domains=["fintech"],
-        work_authorization=["us_citizen"],
-        locations=["Austin, TX"],
-        remote_preference="remote",
-        employment_types=["full_time"],
-        evidence=[ResumeEvidence(claim="8 years", source_quote="8 years building payments")],
-    )
-
-
 def _requirements() -> JobRequirements:
     return JobRequirements(
         required_skills=["python"],
@@ -125,17 +109,7 @@ ALL_INSTANCES: list[BaseModel] = [
     _candidate_note(),
     CandidateNotes(notes=[_candidate_note()]),
     Fingerprint(cache_key="c"),
-    StoredResumeProfile(
-        id="id-1",
-        user_id="local",
-        cache_key="c",
-        profile=_profile(),
-        parser_version="1.0.0",
-        schema_version="1.0.0",
-        model="z-ai/glm-5.2",
-        created_at="2026-06-26T00:00:00Z",
-        updated_at="2026-06-26T00:00:00Z",
-    ),
+    stored_profile(),
     AdzunaQuery(what="backend engineer"),
     SearchPlan(queries=[AdzunaQuery(what="backend engineer")]),
     _requirements(),
@@ -220,11 +194,7 @@ def test_required_skills_does_not_false_positive_on_instrument_tenor(skill: str)
 def test_stored_resume_profile_notes_default_and_old_shape_still_validates() -> None:
     """`notes` defaults to [] so an old-shaped cached profile JSON (written before this
     field existed) still validates without a SCHEMA_VERSION bump / cache invalidation."""
-    old_shaped = StoredResumeProfile(
-        id="id-1", user_id="local", cache_key="c", profile=_profile(),
-        parser_version="1.0.0", schema_version="1.0.0", model="z-ai/glm-5.2",
-        created_at="2026-06-26T00:00:00Z", updated_at="2026-06-26T00:00:00Z",
-    )
+    old_shaped = stored_profile()
     assert old_shaped.notes == []
 
     old_json = old_shaped.model_dump()
