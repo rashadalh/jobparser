@@ -29,5 +29,3 @@ next-env.d.ts
 .DS_Store
 *.log
 
-# --- local-only agent skills (not shared) ---
-local_skills/
