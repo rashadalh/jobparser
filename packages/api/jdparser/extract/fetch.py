@@ -87,9 +87,13 @@ def fetch(url: str) -> FetchResult:
        content alone (a genuinely short JD is still a normal 2xx and never
        triggers this — only the quality gate catches that case).
 
-       Step 3 is BEST-EFFORT and cannot fail the fetch. It needs an X display, and
-       where there isn't one (no Xvfb, or a process started outside the container
-       entrypoint) the launch raises "Missing X server or $DISPLAY". That used to
+       Step 3 needs an X display. In the container that is Xvfb, started by
+       ``entrypoint.sh`` on the ``DISPLAY`` the image ENV advertises — which is why
+       the ENV is set in the Dockerfile and not just exported by the entrypoint:
+       ``docker exec`` inherits the former and never the latter.
+
+       It is nonetheless BEST-EFFORT and cannot fail the fetch. Anywhere there is no
+       display, the launch raises "Missing X server or $DISPLAY"; that used to
        propagate and surface as ``FETCH_FAILED``, discarding the perfectly usable
        headless render from step 2 — an *optional* escalation taking out the
        required path. Now a failed escalation keeps the step-2 result and the job
