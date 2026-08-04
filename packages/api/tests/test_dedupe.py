@@ -99,6 +99,23 @@ def test_missing_nested_keys_do_not_crash() -> None:
     assert out[0] == {}
 
 
+def test_explicit_null_nested_keys_do_not_crash() -> None:
+    """A key PRESENT but null is not the same as a key absent — Adzuna sends both.
+
+    ``.get("company", {})`` returns the default only when the key is missing; an explicit
+    ``"company": null`` yields ``None`` and the chained ``.get`` raises. Since ``dedupe_jobs``
+    is a top-level node with no try/except, that AttributeError propagates out of the graph
+    and fails the WHOLE run — every other job in the pull is lost to one malformed listing.
+    """
+    jobs = [
+        {"id": "a", "title": "Engineer", "company": None, "location": None, "redirect_url": "https://r/1"},
+        {"id": "b", "title": "Engineer", "company": None, "location": None, "redirect_url": "https://r/2"},
+    ]
+    out = dedupe(jobs)
+    assert [j["id"] for j in out] == ["a", "b"]  # distinct URLs -> both kept
+    assert _key(jobs[0]) == ("https://r/1", "", "engineer", "")
+
+
 def test_empty_input_returns_empty() -> None:
     assert dedupe([]) == []
 

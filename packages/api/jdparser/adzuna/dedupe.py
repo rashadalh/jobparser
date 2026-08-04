@@ -15,9 +15,12 @@ from typing import Any
 # reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
 def _key(job: dict[str, Any]) -> tuple[str, str, str, str]:
     final = (job.get("final_url") or job.get("redirect_url") or "").strip().lower()
-    company = (job.get("company", {}).get("display_name") or "").strip().lower()
+    # `or {}` (not `.get(k, {})`): Adzuna sends these keys PRESENT-but-null as well as
+    # absent, and a default only covers the absent case. Matches the null-safe form already
+    # used in graph/subgraph.py and graph/nodes.py.
+    company = ((job.get("company") or {}).get("display_name") or "").strip().lower()
     title = (job.get("title") or "").strip().lower()
-    loc = (job.get("location", {}).get("display_name") or "").strip().lower()
+    loc = ((job.get("location") or {}).get("display_name") or "").strip().lower()
     return (final, company, title, loc)
 
 
