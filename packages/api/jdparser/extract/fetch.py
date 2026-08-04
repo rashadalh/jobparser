@@ -13,7 +13,7 @@ from jdparser.config import (
     FETCH_TIMEOUT_S,
     HTTP_MAX_RETRIES,
     HTTP_USER_AGENT,
-    JD_FETCH_REFERER,
+    HTTP_REFERER,
     MIN_JD_CHARS,
     PLAYWRIGHT_TIMEOUT_MS,
     JDParserError,
@@ -61,7 +61,7 @@ def _render(url: str, *, headless: bool = True) -> tuple[str, int, str]:
         try:
             page = browser.new_page(user_agent=HTTP_USER_AGENT)
             response = page.goto(
-                url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT_MS, referer=JD_FETCH_REFERER
+                url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT_MS, referer=HTTP_REFERER
             )
             status: int = response.status if response is not None else 200
             html: str = page.content()
@@ -89,7 +89,7 @@ def fetch(url: str) -> FetchResult:
 
     Raises ``JDParserError(code="FETCH_FAILED")`` if all paths fail (SPEC §6.4).
     """
-    headers = {"User-Agent": HTTP_USER_AGENT, "Referer": JD_FETCH_REFERER}
+    headers = {"User-Agent": HTTP_USER_AGENT, "Referer": HTTP_REFERER}
 
     # (1) Static-first via httpx.
     try:

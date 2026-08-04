@@ -1,16 +1,16 @@
-"""Tests for adzuna.dedupe — SPEC §4.5.
+"""Tests for jobsource.dedupe — SPEC §4.5.
 
 Dedupe key = ``(final_url or redirect_url, company, title, location)`` each stripped +
 lowercased. First occurrence wins, order preserved.
 
 Operates on ``Job``, not raw provider JSON — the null-handling this module used to do by
-hand now lives in ``adzuna.client._to_job`` (see tests there for the F1 regression that
+hand now lives in ``jobsource.adzuna.client._to_job`` (see tests there for the F1 regression that
 motivated it).
 """
 
 from typing import Any
 
-from jdparser.adzuna.dedupe import _key, dedupe
+from jdparser.jobsource.dedupe import _key, dedupe
 from jdparser.jobs import Job
 
 

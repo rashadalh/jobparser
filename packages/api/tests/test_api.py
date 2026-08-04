@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from jdparser import server
 from jdparser.config import RUNS_DIR, UPLOADS_DIR, JDParserError
 from jdparser.llm.schemas import CandidateNote, ResumeProfile, StoredResumeProfile
-from jdparser.runs.store import create_run
+from jdparser.runs.store import create_run, get_run, list_runs, update_run
 
 client = TestClient(server.app)
 
@@ -202,6 +202,32 @@ def test_health() -> None:
     resp = client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_legacy_adzuna_search_stage_still_loads(runs_cleanup: list[str]) -> None:
+    """A run record written BEFORE the job-source seam must still be readable.
+
+    The search stage was renamed "adzuna_search" -> "job_search" (REFACTOR_AUDIT Phase 3),
+    but the old value is persisted in existing data/runs/*.json. list_runs skips any record
+    that fails validation with a bare `except: continue` — so dropping the old literal from
+    ErrorStage would silently erase the user's run history: no error, no log, no failing
+    test anywhere else. This is that test.
+    """
+    run_id = str(uuid.uuid4())
+    runs_cleanup.append(run_id)
+    rec = create_run(run_id=run_id, user_id="local", resume_file_path="")
+    update_run(
+        run_id,
+        status="completed",
+        errors=[{"job_id": None, "stage": "adzuna_search", "code": "ADZUNA_HTTP",
+                 "message": "500", "detail": None}],
+    )
+    assert rec.run_id == run_id
+
+    reloaded = get_run(run_id)
+    assert reloaded is not None
+    assert reloaded.errors[0]["stage"] == "adzuna_search"
+    assert run_id in {r.run_id for r in list_runs()}   # not swallowed by the listing
 
 
 # --- 5. list endpoints + run-from-profile -------------------------------------

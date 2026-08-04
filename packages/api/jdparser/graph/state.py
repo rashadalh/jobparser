@@ -39,7 +39,7 @@ class JobMatchState(TypedDict):
     max_days_old: int | None              # per-run listing-age filter in days (None/<=0 = any age)
     include_agencies: bool                # True = let recruitment-agency listings through the screen
     search_plan: list[_Json] | None       # list[AdzunaQuery.model_dump()]
-    adzuna_results: list[_Json]           # list[Job.model_dump()] (normalized at the source)
+    job_results: list[_Json]              # list[Job.model_dump()] (normalized at the source)
     deduped_jobs: list[_Json]             # list[Job.model_dump()], deduped + relevance-screened
     screened_out: list[_Json]             # jobs dropped by the relevance pre-screen (off-field)
 
@@ -99,7 +99,7 @@ def initial_state(
         "max_days_old": max_days_old,
         "include_agencies": include_agencies,
         "search_plan": None,
-        "adzuna_results": [],
+        "job_results": [],
         "deduped_jobs": [],
         "screened_out": [],
         "evaluated_jobs": [],

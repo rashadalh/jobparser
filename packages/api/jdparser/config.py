@@ -64,11 +64,15 @@ HTTP_USER_AGENT: str = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
-# Adzuna's own `/land/...` redirect pages sometimes 403 a referrer-less request even with
-# a browser UA (observed: real browser traffic always carries a Referer, ours didn't) —
-# a plausible bot signal on top of UA. Cheap to set, no guarantee against an IP-reputation-
-# based block specifically (see fetch.py/resolve.py callers).
-JD_FETCH_REFERER: str = "https://www.adzuna.com/"
+# Referer sent on EVERY page fetch and URL resolution (fetch.py / resolve.py).
+#
+# The value is deliberately provider-specific even though this is a provider-agnostic
+# layer: Adzuna's own `/land/...` redirect pages 403 a referrer-less request even with a
+# browser UA (observed: real browser traffic always carries a Referer, ours didn't), and
+# the JD-extraction flow starts by following exactly those redirects. Chosen empirically,
+# not by principle — do not "generalize" it to the target host or drop it. Cheap to set, no
+# guarantee against an IP-reputation-based block specifically.
+HTTP_REFERER: str = "https://www.adzuna.com/"
 ADZUNA_COUNTRY: str = "us"                  # Adzuna country code (MVP-fixed, §8/§9)
 ADZUNA_BASE_URL: str = "https://api.adzuna.com/v1/api"
 EVAL_FANOUT_CONCURRENCY: int = 8            # count; max concurrent job-eval workers

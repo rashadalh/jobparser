@@ -27,7 +27,7 @@ from jdparser.graph.nodes import (
     fingerprint_resume,
     load_or_parse_profile,
     plan_searches,
-    run_adzuna_search,
+    search_jobs,
 )
 from jdparser.graph.state import JobEvalState, JobMatchState
 from jdparser.graph.subgraph import (
@@ -77,7 +77,7 @@ def build_graph() -> CompiledGraph:
     g.add_node("fingerprint_resume", fingerprint_resume)
     g.add_node("load_or_parse_profile", load_or_parse_profile)
     g.add_node("plan_searches", plan_searches)
-    g.add_node("run_adzuna_search", run_adzuna_search)
+    g.add_node("search_jobs", search_jobs)
     g.add_node("dedupe_jobs", dedupe_jobs)
     g.add_node("screen_jobs", screen_jobs)       # coarse same-field relevance filter
     g.add_node("job_eval", sub)                  # compiled subgraph as a node (Send targets it)
@@ -87,8 +87,8 @@ def build_graph() -> CompiledGraph:
     g.add_edge("extract_resume_text", "fingerprint_resume")
     g.add_edge("fingerprint_resume", "load_or_parse_profile")
     g.add_edge("load_or_parse_profile", "plan_searches")
-    g.add_edge("plan_searches", "run_adzuna_search")
-    g.add_edge("run_adzuna_search", "dedupe_jobs")
+    g.add_edge("plan_searches", "search_jobs")
+    g.add_edge("search_jobs", "dedupe_jobs")
     g.add_edge("dedupe_jobs", "screen_jobs")     # relevance pre-screen before the fan-out
     g.add_conditional_edges("screen_jobs", evaluate_jobs, ["job_eval"])  # fan-out over screened jobs
     g.add_edge("job_eval", "aggregate_matches")  # join (LangGraph waits for all Sends)

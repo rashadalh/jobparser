@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from jdparser.adzuna.client import _params, _to_job, run_search_plan, search
+from jdparser.jobsource.adzuna.client import _params, _to_job, run_search_plan, search
 from jdparser.config import ADZUNA_BASE_URL, ADZUNA_COUNTRY, JDParserError
 from jdparser.llm.schemas import AdzunaQuery
 

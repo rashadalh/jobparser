@@ -227,7 +227,15 @@ class EvaluatedJob(BaseModel):
 
 # --- §3.10 ErrorRecord -------------------------------------------------------
 ErrorStage = Literal[
-    "resume_extract", "profile", "search_plan", "adzuna_search", "screen",
+    "resume_extract", "profile", "search_plan",
+    "job_search",
+    # BACK-COMPAT — never emitted by current code. Run records written before the
+    # job-source seam (REFACTOR_AUDIT Phase 3) carry this value, and runs/store.list_runs
+    # skips any record that fails validation with a bare `except: continue`. Deleting this
+    # literal would therefore erase the user's entire run history from the UI with no error,
+    # no log line, and no failing test. It looks like dead code; it is not. Leave it.
+    "adzuna_search",
+    "screen",
     "resolve", "fetch", "extract", "quality", "parse", "judge", "aggregate",
 ]
 

@@ -77,7 +77,7 @@ _PHASE_LABELS = {
     "extract_resume_text": "Reading your resume",
     "load_or_parse_profile": "Understanding your background",
     "plan_searches": "Planning job searches",
-    "run_adzuna_search": "Searching job boards",
+    "search_jobs": "Searching job boards",
     "screen_jobs": "Evaluating jobs against your resume",  # eval fan-out follows immediately
     "aggregate_matches": "Compiling your matches",
 }

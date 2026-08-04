@@ -23,8 +23,9 @@ from jdparser.config import (
 from jdparser.graph.build import build_graph
 from jdparser.graph.nodes import aggregate_matches, is_qualified
 from jdparser.graph.state import JobMatchState
+from jdparser.jobsource import SOURCE
 from jdparser.jobs import Job
-from jdparser.adzuna.client import _to_job
+from jdparser.jobsource.adzuna.client import _to_job
 from jdparser.graph.subgraph import _evaluated_job
 from jdparser.llm.schemas import (
     AdzunaQuery,
@@ -252,7 +253,7 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
         "max_days_old": None,
         "include_agencies": False,
         "search_plan": None,
-        "adzuna_results": [],
+        "job_results": [],
         "deduped_jobs": [],
         "screened_out": [],
         "evaluated_jobs": [],
@@ -289,9 +290,9 @@ def run_graph(
     monkeypatch.setattr("jdparser.graph.nodes.profile_resume", _pr)
     monkeypatch.setattr("jdparser.graph.nodes.put_profile", lambda rec: None)
     monkeypatch.setattr(
-        "jdparser.graph.nodes.plan_adzuna_queries", lambda profile: [AdzunaQuery(what="engineer")]
+        "jdparser.graph.nodes.plan_queries", lambda profile: [AdzunaQuery(what="engineer")]
     )
-    monkeypatch.setattr("jdparser.graph.nodes.run_search_plan", lambda plan: list(jobs))
+    monkeypatch.setattr(SOURCE, "search", lambda plan: list(jobs))
     monkeypatch.setattr("jdparser.graph.nodes.screen_relevance_batched", screen)
     # subgraph stages
     monkeypatch.setattr("jdparser.graph.subgraph.resolve_final_url", resolve)
@@ -483,7 +484,7 @@ def test_search_locations_override(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["locations"] = list(profile.locations)
         return [AdzunaQuery(what="engineer")]
 
-    monkeypatch.setattr("jdparser.graph.nodes.plan_adzuna_queries", _capture)
+    monkeypatch.setattr("jdparser.graph.nodes.plan_queries", _capture)
 
     state = _initial_state([])
     state["resume_profile"] = _profile().model_dump()
@@ -515,7 +516,7 @@ def test_location_override_used_verbatim(monkeypatch: pytest.MonkeyPatch) -> Non
             AdzunaQuery(what="software tester"),  # nationwide
         ]
 
-    monkeypatch.setattr("jdparser.graph.nodes.plan_adzuna_queries", _planner)
+    monkeypatch.setattr("jdparser.graph.nodes.plan_queries", _planner)
     state = _initial_state([])
     state["resume_profile"] = _profile().model_dump()
 
@@ -537,7 +538,7 @@ def test_max_days_old_applied_to_every_query(monkeypatch: pytest.MonkeyPatch) ->
     from jdparser.graph import nodes
 
     monkeypatch.setattr(
-        "jdparser.graph.nodes.plan_adzuna_queries",
+        "jdparser.graph.nodes.plan_queries",
         lambda p: [AdzunaQuery(what="qa", max_days_old=99), AdzunaQuery(what="qa analyst")],
     )
     state = _initial_state([])
@@ -557,7 +558,7 @@ def test_location_override_remote_is_nationwide(monkeypatch: pytest.MonkeyPatch)
     from jdparser.graph import nodes
 
     monkeypatch.setattr(
-        "jdparser.graph.nodes.plan_adzuna_queries",
+        "jdparser.graph.nodes.plan_queries",
         lambda p: [AdzunaQuery(what="qa", where="Austin, TX"), AdzunaQuery(what="qa analyst")],
     )
     state = _initial_state([])
@@ -575,7 +576,7 @@ def test_broaden_search_strict_drops_nationwide(monkeypatch: pytest.MonkeyPatch)
     def _planner(profile: ResumeProfile) -> list[AdzunaQuery]:
         return [AdzunaQuery(what="engineer", where="Seattle, WA"), AdzunaQuery(what="engineer")]
 
-    monkeypatch.setattr("jdparser.graph.nodes.plan_adzuna_queries", _planner)
+    monkeypatch.setattr("jdparser.graph.nodes.plan_queries", _planner)
     state = _initial_state([])
     state["resume_profile"] = _profile().model_dump()
 
