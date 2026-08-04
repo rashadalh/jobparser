@@ -249,6 +249,19 @@ class ErrorRecord(BaseModel):
     detail: dict[str, Any] | None = None
 
 
+# --- LLM spend for one run ---------------------------------------------------
+class LlmUsage(BaseModel):
+    """What the run's LLM calls cost. `cost_usd` is OpenRouter's own figure, not a
+    local estimate; `cost_complete` is False if any call came back without one, in
+    which case the total is a floor rather than the full amount."""
+
+    calls: int
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float
+    cost_complete: bool = True
+
+
 # --- §5.2 RunRecord (API response + on-disk run record) ----------------------
 RunStatus = Literal["pending", "running", "completed", "failed"]
 
@@ -277,4 +290,7 @@ class RunRecord(BaseModel):
     errors: list[dict[str, Any]]
     # jobs dropped by the relevance pre-screen (off-field) — audit/transparency
     screened_out: list[dict[str, Any]] = []  # reason: heterogeneous JSON passthrough
+    # None on runs that predate token accounting, and on runs that failed before any
+    # LLM call — distinct from a real zero, which means calls happened and were free.
+    usage: LlmUsage | None = None
     error: str | None

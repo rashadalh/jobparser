@@ -13,6 +13,7 @@ from instructor.core import InstructorRetryException  # moved from instructor.ex
 from openai import OpenAI
 from pydantic import BaseModel
 
+from jdparser.llm.usage import record_completion
 from jdparser.config import (
     JDParserError,
     LLM_MAX_RETRIES,
@@ -37,13 +38,23 @@ _oai = OpenAI(
 # + `max_retries` (re-ask on validation failure). Mode.JSON is the most portable
 # across heterogeneous OpenRouter models.
 _client = instructor.from_openai(_oai, mode=instructor.Mode.JSON)
+# Count every billed attempt, not just the successful one. instructor re-asks on a
+# validation failure (LLM_MAX_RETRIES) and each re-ask is charged, so hooking the raw
+# response is the only place that sees them all — `create_with_completion` hands back
+# just the final attempt.
+_client.on("completion:response", record_completion)
 
 
 def _reasoning_body(setting: str) -> dict[str, Any]:  # reason: heterogeneous extra_body JSON (SPEC §6.3)
-    # OpenRouter normalizes `reasoning` across providers (GLM, Gemini, ...).
+    # OpenRouter normalizes `reasoning` across providers (Gemini, GLM, ...).
+    # `usage.include` asks OpenRouter to return what the call actually cost, so the run's
+    # spend is the provider's own figure rather than a local price table that goes stale.
+    body: dict[str, Any] = {"usage": {"include": True}}
     if setting == "off":
-        return {"reasoning": {"enabled": False}}
-    return {"reasoning": {"effort": setting}}  # "low" | "medium" | "high"
+        body["reasoning"] = {"enabled": False}
+    else:
+        body["reasoning"] = {"effort": setting}  # "low" | "medium" | "high"
+    return body
 
 
 def _hit_length(exc: InstructorRetryException) -> bool:

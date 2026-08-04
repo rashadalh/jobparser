@@ -172,6 +172,52 @@ def test_status_qualified_but_gated_lands_in_rejected(
     assert set(j["job_id"] for j in rec["rejected"]) == {"job-r", "job-q2"}  # job-q2 no longer lost
 
 
+def test_run_record_captures_llm_spend(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """Whatever the graph spends must land on the run record the frontend polls."""
+    from jdparser.llm.usage import record_completion
+
+    class _Usage:
+        prompt_tokens, completion_tokens, cost = 1000, 200, 0.0042
+        model_extra: dict[str, Any] = {}
+
+    class _Completion:
+        usage = _Usage()
+
+    class _SpendingGraph(_FakeGraph):
+        def stream(self, init: Any, config: Any = None, stream_mode: Any = None) -> Any:
+            for chunk in super().stream(init, config, stream_mode):
+                record_completion(_Completion())   # the graph making a billed call
+                yield chunk
+
+    monkeypatch.setattr(server, "_graph", _SpendingGraph(final=_final_state()))
+    run_id = _post_run().json()["run_id"]
+    runs_cleanup.append(run_id)
+
+    usage = client.get(f"/api/runs/{run_id}").json()["usage"]
+    assert usage["calls"] == 4          # 1 screen_jobs chunk + 3 job_eval chunks
+    assert usage["prompt_tokens"] == 4000
+    assert usage["cost_usd"] == 0.0168
+    assert usage["cost_complete"] is True
+
+
+def test_failed_run_still_reports_what_it_spent(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """A run that dies partway still cost money; hiding that is the wrong direction."""
+    monkeypatch.setattr(
+        server, "_graph", _FakeGraph(exc=JDParserError(code="EVAL_COUNT_MISMATCH", message="x"))
+    )
+    run_id = _post_run().json()["run_id"]
+    runs_cleanup.append(run_id)
+
+    rec = client.get(f"/api/runs/{run_id}").json()
+    assert rec["status"] == "failed"
+    assert rec["usage"] is not None      # present even on the failure path
+    assert rec["usage"]["calls"] == 0
+
+
 # --- 2. unknown run -> 404 ----------------------------------------------------
 def test_get_unknown_run_404() -> None:
     resp = client.get(f"/api/runs/{uuid.uuid4()}")

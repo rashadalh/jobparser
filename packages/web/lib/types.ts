@@ -72,6 +72,12 @@ export interface ScreenedJob {
   // (recruitment-agency listing, not opted in). Older runs omit it.
   reason?: "off_field" | "over_cap" | "agency";
 }
+export interface LlmUsage {
+  calls: number; prompt_tokens: number; completion_tokens: number;
+  cost_usd: number;
+  // false when a call came back without a cost figure, making cost_usd a floor
+  cost_complete: boolean;
+}
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {
   run_id: string; user_id: string; status: RunStatus;
@@ -83,4 +89,6 @@ export interface RunRecord {
   qualified_jobs: EvaluatedJob[]; failures: EvaluatedJob[];
   rejected: EvaluatedJob[]; errors: ErrorRecord[];
   screened_out: ScreenedJob[]; error: string | null;
+  // null on runs from before cost tracking, and on runs that died before any LLM call
+  usage: LlmUsage | null;
 }

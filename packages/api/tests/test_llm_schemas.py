@@ -234,9 +234,16 @@ def test_config_env_override_and_restore() -> None:
 
 def test_reasoning_body() -> None:
     """reasoning 'off' disables; any other value sets effort (SPEC §6.3)."""
-    assert _reasoning_body("off") == {"reasoning": {"enabled": False}}
-    assert _reasoning_body("low") == {"reasoning": {"effort": "low"}}
-    assert _reasoning_body("medium") == {"reasoning": {"effort": "medium"}}
+    assert _reasoning_body("off")["reasoning"] == {"enabled": False}
+    assert _reasoning_body("low")["reasoning"] == {"effort": "low"}
+    assert _reasoning_body("medium")["reasoning"] == {"effort": "medium"}
+
+
+def test_every_call_asks_openrouter_for_cost() -> None:
+    """Without `usage.include` OpenRouter returns tokens but no cost, and the run's
+    spend silently becomes unknowable — every reasoning setting must carry it."""
+    for setting in ("off", "low", "medium", "high"):
+        assert _reasoning_body(setting)["usage"] == {"include": True}
 
 
 class _Dummy(BaseModel):

@@ -38,6 +38,7 @@ from jdparser.graph.state import JobMatchState, initial_state
 from jdparser.llm.feedback import distill_notes
 from jdparser.llm.resume_profiler import profile_resume
 from jdparser.llm.schemas import RunRecord, StoredResumeProfile
+from jdparser.llm.usage import start_run_usage
 from jdparser.resume.extract_text import extract_text
 from jdparser.runs.store import create_run, get_run, list_runs, update_run
 
@@ -137,6 +138,9 @@ def _execute(
     ``except`` is mandatory so a run is never left stuck ``running``.
     """
     update_run(run_id, status="running")
+    # Accounting for THIS run. A ContextVar, so concurrent background runs don't pool
+    # their spend together; it reaches the fan-out worker threads too.
+    usage = start_run_usage()
     init = initial_state(
         run_id,
         resume_file_path=resume_path,
@@ -181,11 +185,13 @@ def _execute(
             rejected=rejected,
             errors=final["errors"],
             screened_out=final.get("screened_out", []),
+            usage=usage.as_dict(),
         )
     except JDParserError as e:
-        update_run(run_id, status="failed", error=f"{e.code}: {e.message}")
+        # record spend on failures too — a run that died at the judge still cost money
+        update_run(run_id, status="failed", error=f"{e.code}: {e.message}", usage=usage.as_dict())
     except Exception as e:  # reason: never leave a run stuck in "running"
-        update_run(run_id, status="failed", error=str(e))
+        update_run(run_id, status="failed", error=str(e), usage=usage.as_dict())
 
 
 @app.get("/api/health")

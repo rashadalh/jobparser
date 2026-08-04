@@ -922,6 +922,23 @@ Tier-2 assertion. (Documented per method: state explicitly when 3.5 is/ isn't us
 
 ## 7.7 Post-spec features (normative)
 
+**Per-run LLM spend (`RunRecord.usage`).** Every OpenRouter call in a run is counted into
+`LlmUsage` (`calls`, `prompt_tokens`, `completion_tokens`, `cost_usd`, `cost_complete`)
+and written to the run record, on success AND on failure — a run that died at the judge
+still cost money.
+
+`cost_usd` is **OpenRouter's own figure**, requested per call via `usage.include`, not a
+local price table: it stays correct when prices change or routing moves to a different
+upstream provider. If any call returns no cost, `cost_complete` goes false and the UI
+reports the total as a floor ("Cost at least …") rather than as authoritative.
+
+Counting happens on instructor's `completion:response` hook, so re-asks after a validation
+failure are included — they are billed, and omitting them would understate exactly the
+runs that cost the most. Attribution is a `ContextVar` set per run, which reaches
+LangGraph's fan-out workers; concurrent runs do not pool their spend. `usage` is `None` on
+records written before this existed, which is distinct from a real zero.
+
+
 Three user-visible features shipped after this spec was first written and are documented
 here rather than being retrofitted into §3–§4 (REFACTOR_AUDIT F5).
 
