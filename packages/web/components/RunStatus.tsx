@@ -32,7 +32,7 @@ export default function RunStatus({
   if (run.status === "pending" || run.status === "running") {
     const label =
       run.status === "pending"
-        ? "Queued — preparing your run…"
+        ? "Queued. Getting your run ready…"
         : run.phase ?? "Matching jobs against your resume…";
     // Show a progress bar once the eval fan-out size is known (jobs_total > 0).
     const showBar = run.jobs_total != null && run.jobs_total > 0;
@@ -73,9 +73,9 @@ export default function RunStatus({
   // completed
   const cacheMsg =
     run.resume_cache_hit === true
-      ? "Loaded your profile from cache"
+      ? "Reused your saved profile"
       : run.resume_cache_hit === false
-        ? "Parsed a fresh profile"
+        ? "Parsed your resume from scratch"
         : null;
 
   return (

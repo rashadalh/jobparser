@@ -93,7 +93,7 @@ export default function SavedPanel({
           <label className="text-sm font-medium text-gray-700">
             Reuse a previously parsed resume{" "}
             <span className="font-normal text-gray-500">
-              (no re-upload, no re-parse — runs a fresh job search)
+              (no re-upload needed, and it still runs a fresh job search)
             </span>
           </label>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -128,8 +128,8 @@ export default function SavedPanel({
               <label className="text-xs font-medium text-gray-600">
                 Locations to search{" "}
                 <span className="font-normal text-gray-400">
-                  — pre-filled from the resume; add or remove, or clear all for a
-                  nationwide search
+                  (pre-filled from your resume. Add or remove them, or clear them all
+                  to search nationwide.)
                 </span>
               </label>
               <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -186,7 +186,7 @@ export default function SavedPanel({
                 />
                 Include broader results (also search nationwide)
                 <span className="text-gray-400">
-                  — uncheck to restrict strictly to the locations above
+                  (uncheck to stay strictly within the locations above)
                 </span>
               </label>
 
@@ -208,7 +208,7 @@ export default function SavedPanel({
                   <option value={30}>1 month</option>
                   <option value={0}>Any time</option>
                 </select>
-                <span className="text-gray-400">— defaults to the past week</span>
+                <span className="text-gray-400">(defaults to the past week)</span>
               </label>
 
               <label className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
@@ -221,7 +221,7 @@ export default function SavedPanel({
                 />
                 Include recruitment agencies
                 <span className="text-gray-400">
-                  — off by default; agency listings are screened out before evaluation
+                  (off by default. Agency listings are filtered out before we evaluate them.)
                 </span>
               </label>
             </div>

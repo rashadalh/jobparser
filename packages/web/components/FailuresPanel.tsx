@@ -7,6 +7,13 @@ import type {
 import Pills from "@/components/Pills";
 import FeedbackForm from "@/components/FeedbackForm";
 
+// The judge's decision values are snake_case enums; never show them to a person as-is.
+const DECISION_LABEL: Record<string, string> = {
+  qualified: "a match",
+  not_qualified: "not a match",
+  uncertain: "unclear",
+};
+
 // Plain-language explanation of each pipeline stage a job can fail at.
 const STAGE_EXPLAINER: Record<string, string> = {
   resolve: "The job's redirect could not be resolved to a real employer URL.",
@@ -108,9 +115,9 @@ function RejectedItem({ job, runId }: { job: EvaluatedJob; runId: string }) {
       <summary className="cursor-pointer text-sm text-gray-700">
         <span className="font-medium text-gray-900">{job.title}</span>
         {job.company ? ` · ${job.company}` : ""}
-        {" — "}
+        {" · "}
         <span className="text-gray-500">
-          {j?.decision ?? "—"}
+          {j ? DECISION_LABEL[j.decision] ?? j.decision : "no decision"}
           {j ? ` (${Math.round(j.confidence * 100)}% confidence)` : ""}
         </span>
       </summary>
@@ -120,7 +127,7 @@ function RejectedItem({ job, runId }: { job: EvaluatedJob; runId: string }) {
           <>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Why this was {j.decision}
+                Why we ruled it {DECISION_LABEL[j.decision] ?? j.decision}
               </span>
               <p
                 data-testid="reasoning"
@@ -169,8 +176,8 @@ function RejectedItem({ job, runId }: { job: EvaluatedJob; runId: string }) {
             jobId={job.job_id}
             openLabel="Disagree with this?"
             prompt="Why do you think you're a fit for this job?"
-            placeholder="e.g. I led Kubernetes migrations at Acme — my resume only lists Docker"
-            doneText="Noted — your next run for this resume will take this into account."
+            placeholder="e.g. I led Kubernetes migrations at Acme, but my resume only lists Docker"
+            doneText="Thanks. Your next run for this resume will take this into account."
           />
         </div>
       </div>
@@ -195,7 +202,7 @@ function FailedItem({
       <summary className="cursor-pointer text-sm text-gray-700">
         <span className="font-medium text-gray-900">{job.title}</span>
         {job.company ? ` · ${job.company}` : ""}
-        {" — "}
+        {" · "}
         <span className="text-gray-500">failed at {stage}</span>
       </summary>
 
@@ -208,7 +215,7 @@ function FailedItem({
           <p className="text-sm text-gray-700">
             <span className="font-mono text-xs text-gray-500">{error.code}</span>
             {error.message && error.message !== error.code
-              ? ` — ${error.message}`
+              ? `: ${error.message}`
               : ""}
           </p>
         )}
@@ -254,13 +261,14 @@ export default function FailuresPanel({
       className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
     >
       <summary className="cursor-pointer text-sm font-medium text-gray-700">
-        Audit — {failures.length} failed · {rejected.length} rejected ·{" "}
+        Audit: {failures.length} failed · {rejected.length} rejected ·{" "}
         {errors.length} errors · {screened.length} filtered
       </summary>
 
       <p className="mt-3 text-xs text-gray-500">
-        Results update by polling (no live stream); single local profile. Click any
-        row below to see the model&apos;s reasoning.
+        Results refresh as we check for them rather than streaming live, and everything
+        is saved under a single local profile. Click any row to see the model&apos;s
+        reasoning.
       </p>
 
       <section className="mt-4">
@@ -300,15 +308,15 @@ export default function FailuresPanel({
       {/* off-field always renders (its "None" is meaningful: nothing was dropped);
           the other two appear only when non-empty, as before. */}
       <ScreenedSection
-        title="Filtered as off-field"
-        explainer="Dropped before evaluation as not in your field (a keyword match in an unrelated industry/role), to keep the feed and cost focused."
+        title="Not in your field"
+        explainer="These matched on a keyword but sit in a different industry or role, so we skipped them before evaluating anything."
         jobs={offField}
       />
 
       {overCap.length > 0 && (
         <ScreenedSection
-          title="In-field, not evaluated"
-          explainer="Relevant to your field but past this run's evaluation budget (the top matches were evaluated first). Re-run or narrow the search to reach these."
+          title="In your field, but not evaluated"
+          explainer="These are relevant, but the run hit its evaluation limit and the strongest matches went first. Run it again or narrow your search to reach them."
           jobs={overCap}
         />
       )}
@@ -316,7 +324,7 @@ export default function FailuresPanel({
       {agency.length > 0 && (
         <ScreenedSection
           title="Recruitment agencies, not evaluated"
-          explainer="In-field but screened out as third-party recruiter/staffing listings. Check “Include recruitment agencies” in the search panel and re-run to evaluate these."
+          explainer="These are in your field but look like recruiter or staffing listings rather than the employer hiring directly. Check “Include recruitment agencies” in the search panel and run again to have them evaluated."
           jobs={agency}
         />
       )}
@@ -334,7 +342,7 @@ export default function FailuresPanel({
                 <span className="font-mono text-xs text-gray-500">
                   {e.stage}/{e.code}
                 </span>
-                {e.message ? ` — ${e.message}` : ""}
+                {e.message ? `: ${e.message}` : ""}
                 {e.job_id ? (
                   <span className="text-xs text-gray-400"> (job {e.job_id})</span>
                 ) : (

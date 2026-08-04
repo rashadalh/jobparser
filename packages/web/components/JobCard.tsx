@@ -18,7 +18,7 @@ export default function JobCard({ job, runId }: { job: EvaluatedJob; runId: stri
             {isAgency && (
               <span
                 data-testid="agency-badge"
-                title="This posting appears to be from a third-party recruitment/staffing agency, not the direct employer."
+                title="This looks like a listing from a recruitment agency rather than the employer hiring directly."
                 className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-xs font-medium text-amber-800"
               >
                 Agency
@@ -95,7 +95,7 @@ export default function JobCard({ job, runId }: { job: EvaluatedJob; runId: stri
           openLabel="Not a fit?"
           prompt="What's wrong with this match?"
           placeholder="e.g. I don't have an active clearance"
-          doneText="Noted — this will inform your next run for this resume."
+          doneText="Thanks. We&apos;ll take this into account the next time you run this resume."
         />
       </div>
     </article>

@@ -26,9 +26,8 @@ export default function ResumeProfileView({
         What we extracted from your resume
       </summary>
       <p className="mt-2 text-xs text-gray-500">
-        This is the structured profile the matcher reasons over. If something looks
-        wrong or missing, that&apos;s why a job may have been mis-judged — the model
-        only sees what&apos;s captured here.
+        This is what the matcher works from. If something here looks wrong or
+        missing, that explains a bad match: it only ever sees what&apos;s on this page.
       </p>
 
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -81,8 +80,8 @@ export default function ResumeProfileView({
           Work history ({profile.total_years_experience} yrs total)
         </span>
         <p className="mt-0.5 text-xs text-gray-400">
-          Total years is computed in code from these dated roles (overlapping roles
-          counted once; gaps between jobs excluded) — not estimated by the model.
+          We work out the total from these dated roles rather than asking the model.
+          Overlapping roles count once, and gaps between jobs don&apos;t count.
         </p>
         {profile.work_periods.length === 0 ? (
           <p className="mt-1 text-sm text-gray-400">none extracted</p>
@@ -93,7 +92,7 @@ export default function ResumeProfileView({
                 <span className="font-medium">{w.title}</span>
                 {w.organization ? ` · ${w.organization}` : ""}
                 <span className="text-gray-500">
-                  {" "}— {w.start_year} → {w.end_year ?? "present"}
+                  {" · "}{w.start_year} to {w.end_year ?? "present"}
                 </span>
               </li>
             ))}

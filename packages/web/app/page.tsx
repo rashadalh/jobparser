@@ -25,8 +25,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Resume Job Matcher</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Upload a resume — see only the jobs you qualify for, each backed by
-          cited evidence.
+          Upload your resume and see only the jobs you actually qualify for.
+          Every match shows you the evidence behind it.
         </p>
       </header>
       <div className="space-y-6">{children}</div>
@@ -218,16 +218,16 @@ export default function Home() {
       {parsing && (
         <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm">
           <span className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-          Parsing your resume… (no job search)
+          Parsing your resume. This won&apos;t search for jobs yet…
         </div>
       )}
 
       {parsedProfile && !parsing && (
         <section className="space-y-2">
           <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-            Resume parsed — <span className="font-medium">no job search run</span>. It&apos;s
-            saved; pick it under &ldquo;Reuse a previously parsed resume&rdquo; to search
-            without re-parsing.
+            Resume parsed. <span className="font-medium">No job search has run yet.</span> It&apos;s
+            saved, so you can pick it under &ldquo;Reuse a previously parsed resume&rdquo; to
+            search without parsing it again.
           </div>
           <ResumeProfileView profile={parsedProfile} />
         </section>
@@ -244,9 +244,9 @@ export default function Home() {
 
       {timedOut && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          This run is taking longer than expected. We&apos;ve stopped polling
-          after {Math.round(POLL_TIMEOUT_MS / 1000)} seconds — it may still be
-          running on the server. Try again later or re-upload.
+          This run is taking longer than expected, so we stopped checking after{" "}
+          {Math.round(POLL_TIMEOUT_MS / 1000)} seconds. It may still be running on
+          the server. Try again in a bit, or upload your resume again.
         </div>
       )}
 

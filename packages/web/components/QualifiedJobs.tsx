@@ -17,16 +17,16 @@ export default function QualifiedJobs({ jobs, runId }: { jobs: EvaluatedJob[]; r
 
       {agencyCount > 0 && (
         <p className="mb-3 text-sm text-gray-500">
-          Includes {agencyCount} recruitment-agency{" "}
-          {agencyCount === 1 ? "listing" : "listings"} (shown last) — you opted in for
-          this search.
+          Includes {agencyCount} recruitment agency{" "}
+          {agencyCount === 1 ? "listing" : "listings"}, shown last, because you opted
+          in for this search.
         </p>
       )}
 
       {jobs.length === 0 ? (
         <p className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
-          No qualifying jobs found for this resume. See the audit panel below for what
-          was evaluated.
+          Nothing qualified for this resume. The audit panel below shows everything
+          we looked at and why each one was ruled out.
         </p>
       ) : (
         <div className="space-y-4">
