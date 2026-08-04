@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { listProfiles, listRuns } from "@/lib/api";
-import type { ProfileSummary, RunSummary } from "@/lib/types";
+import type { CandidateNote, ProfileSummary, RunSummary } from "@/lib/types";
+import CandidateNotes from "@/components/CandidateNotes";
 
 function profileLabel(p: ProfileSummary): string {
   const role = p.roles[0] ?? "resume";
@@ -48,6 +49,16 @@ export default function SavedPanel({
   const [broaden, setBroaden] = useState<boolean>(true); // include nationwide results
   const [maxDaysOld, setMaxDaysOld] = useState<number>(7); // listing-age cap in days (0 = any)
   const [includeAgencies, setIncludeAgencies] = useState<boolean>(false); // recruitment agencies
+
+  const selectedProfile = profiles.find((p) => p.cache_key === selected);
+
+  // The server returns the FULL re-distilled list, so replace rather than append —
+  // a new note may have merged into or superseded an existing one.
+  function updateSelectedNotes(notes: CandidateNote[]) {
+    setProfiles((prev) =>
+      prev.map((p) => (p.cache_key === selected ? { ...p, notes } : p)),
+    );
+  }
 
   function selectProfile(key: string) {
     setSelected(key);
@@ -224,6 +235,13 @@ export default function SavedPanel({
                   (off by default. Agency listings are filtered out before we evaluate them.)
                 </span>
               </label>
+
+              <CandidateNotes
+                cacheKey={selected}
+                notes={selectedProfile?.notes ?? []}
+                onNotesChange={updateSelectedNotes}
+                disabled={disabled}
+              />
             </div>
           )}
         </div>

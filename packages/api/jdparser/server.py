@@ -300,6 +300,10 @@ def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summari
             "roles": p.profile.roles[:3],
             "education": p.profile.education[:1],
             "locations": p.profile.locations,  # inferred preferred locations (editable pre-fill)
+            # The distilled feedback list. Carried on the summary rather than behind a
+            # per-profile fetch: distill_notes keeps it deliberately small, so shipping it
+            # with the picker costs less than the extra round-trip and loading state.
+            "notes": [n.model_dump() for n in p.notes],
         }
         for p in list_profiles()
         if p.parser_version == PARSER_VERSION and p.schema_version == SCHEMA_VERSION
@@ -331,6 +335,30 @@ def read_run(run_id: str) -> RunRecord:
     if rec is None:
         raise HTTPException(status_code=404, detail="run not found")
     return rec
+
+
+@app.post("/api/profiles/{cache_key}/notes")
+def add_profile_note(cache_key: str, text: str = Form(...)) -> dict[str, Any]:
+    """Add feedback about the CANDIDATE rather than about a specific job.
+
+    ``POST /api/feedback`` only accepts corrections attached to a job the judge got
+    wrong. Plenty of what a candidate needs to say has no job to hang it on ("I won't
+    relocate", "the 2019 gap was contract work"), and before this there was nowhere to
+    put it. Same distillation, same note list, no ``job_context``.
+
+    Applies to the candidate's NEXT run; nothing already evaluated is re-judged.
+    """
+    stored = get_profile(cache_key)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="profile not found")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="feedback text is empty")
+    try:
+        notes = distill_notes(stored.notes, None, text.strip())
+    except JDParserError as e:
+        raise HTTPException(status_code=400, detail=f"{e.code}: {e.message}")
+    put_profile(stored.model_copy(update={"notes": notes, "updated_at": now_iso()}))
+    return {"notes": [n.model_dump() for n in notes]}
 
 
 @app.post("/api/feedback")

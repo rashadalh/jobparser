@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from builders import profile, stored_profile
 from jdparser import server
-from jdparser.config import RUNS_DIR, UPLOADS_DIR, JDParserError
+from jdparser.config import PARSER_VERSION, RUNS_DIR, SCHEMA_VERSION, UPLOADS_DIR, JDParserError
 from jdparser.llm.schemas import CandidateNote, ResumeProfile, StoredResumeProfile
 from jdparser.runs.store import create_run, get_run, list_runs, update_run
 
@@ -311,6 +311,64 @@ def test_feedback_happy_path_distills_and_saves_notes(
     assert resp.json() == {"notes": [n.model_dump() for n in canned]}
     assert saved["record"].cache_key == "fake-cache-key"
     assert saved["record"].notes == canned
+
+
+# --- profile-level notes (feedback with no job attached) ----------------------
+def test_add_profile_note_distills_and_saves(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Feedback about the candidate, not about a job the judge got wrong.
+
+    `job_context` is None here: there is no verdict to correct. The distiller has to be
+    told that explicitly, otherwise the prompt looks for an `outcome` that isn't there.
+    """
+    stored = _stored_profile("ck-1")
+    monkeypatch.setattr(server, "get_profile", lambda key: stored if key == "ck-1" else None)
+    saved: dict[str, Any] = {}
+    monkeypatch.setattr(server, "put_profile", lambda rec: saved.__setitem__("record", rec))
+
+    seen: dict[str, Any] = {}
+
+    def _distill(existing: Any, ctx: Any, text: str) -> list[CandidateNote]:
+        seen["ctx"] = ctx
+        seen["text"] = text
+        return [CandidateNote(note="Will not relocate outside Texas", kind="dealbreaker", source="s")]
+
+    monkeypatch.setattr(server, "distill_notes", _distill)
+
+    resp = client.post("/api/profiles/ck-1/notes", data={"text": "  I won't relocate  "})
+    assert resp.status_code == 200
+    assert seen["ctx"] is None            # no job -> no context
+    assert seen["text"] == "I won't relocate"   # trimmed
+    assert resp.json()["notes"][0]["kind"] == "dealbreaker"
+    assert saved["record"].notes[0].note == "Will not relocate outside Texas"
+
+
+def test_add_profile_note_unknown_profile_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "get_profile", lambda key: None)
+    resp = client.post("/api/profiles/nope/notes", data={"text": "hello"})
+    assert resp.status_code == 404
+
+
+def test_add_profile_note_rejects_blank_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Whitespace would burn an LLM call to distill nothing."""
+    monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("ck-1"))
+    called = {"n": 0}
+    monkeypatch.setattr(server, "distill_notes", lambda *a: called.__setitem__("n", called["n"] + 1))
+    resp = client.post("/api/profiles/ck-1/notes", data={"text": "   "})
+    assert resp.status_code == 400
+    assert called["n"] == 0
+
+
+def test_profiles_listing_exposes_notes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The picker needs the notes inline; the panel renders them without a second fetch."""
+    note = CandidateNote(note="No active clearance", kind="dealbreaker", source="s")
+    # current versions: the endpoint only offers profiles parsed under the live ones
+    current = stored_profile(
+        cache_key="ck-1", notes=[note],
+        parser_version=PARSER_VERSION, schema_version=SCHEMA_VERSION,
+    )
+    monkeypatch.setattr(server, "list_profiles", lambda: [current])
+    body = client.get("/api/profiles").json()
+    assert body[0]["notes"] == [note.model_dump()]
 
 
 def test_feedback_unknown_run_404() -> None:

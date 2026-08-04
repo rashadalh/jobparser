@@ -92,3 +92,28 @@ export async function submitFeedback(
   }
   return (await r.json()).notes;
 }
+
+// Add feedback about YOURSELF rather than about a specific job ("I won't relocate").
+// Returns the full re-distilled note list, not just the new note.
+export async function addProfileNote(
+  cacheKey: string,
+  text: string,
+): Promise<CandidateNote[]> {
+  const fd = new FormData();
+  fd.append("text", text);
+  const r = await fetch(`${BASE}/api/profiles/${cacheKey}/notes`, {
+    method: "POST",
+    body: fd,
+  });
+  if (!r.ok) {
+    let detail = `saving feedback failed: ${r.status}`;
+    try {
+      const j = await r.json();
+      if (j?.detail) detail = j.detail;
+    } catch {
+      /* keep the status-based message */
+    }
+    throw new Error(detail);
+  }
+  return (await r.json()).notes;
+}

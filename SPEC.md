@@ -963,6 +963,15 @@ evidence**, so a skill asserted there can satisfy a required skill the resume om
 fit_judge). That is what makes a false-negative correction actually change the next
 verdict rather than just being recorded.
 
+`POST /api/profiles/{cache_key}/notes` adds feedback with NO job attached ("I won't
+relocate", "the 2019 gap was contract work"), for the large class of corrections that
+have no verdict to hang on. Same distillation, `job_context` null. `GET /api/profiles`
+carries `notes` on each summary so the picker can show the list without a second fetch.
+
+The note list IS the summary: distillation merges each new piece of feedback into it
+rather than appending, so it can shrink when a new note supersedes an old one. The
+frontend shows it under a selected saved resume, grouped dealbreaker-first.
+
 Applies to the candidate's NEXT run only; evaluated jobs are never re-judged. `notes`
 defaults to `[]`, so it needed no `SCHEMA_VERSION` bump.
 

@@ -144,3 +144,13 @@ client does not send a direction, so the two forms cannot disagree with the back
 what they mean.
 
 `FailedItem` deliberately has no form: there is no judgment to push back on.
+
+## Candidate notes panel
+
+`components/CandidateNotes.tsx`, rendered by `SavedPanel` once a saved resume is selected.
+Shows the distilled feedback list and takes new feedback that isn't about any one job.
+
+The list is already a summary — the server re-distills the whole thing on every
+submission — so `onNotesChange` REPLACES local state with the server's returned list
+rather than appending to it. Appending would show a note twice when the distiller merged
+it into an existing one, and would hide the case where the list legitimately shrinks.
