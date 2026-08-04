@@ -1,13 +1,17 @@
 """Tests for adzuna.dedupe — SPEC §4.5.
 
-Dedupe key = ``(final_url or redirect_url, company.display_name, title,
-location.display_name)`` each stripped + lowercased. First occurrence wins,
-order preserved. Pure: must never raise, even on jobs missing nested keys.
+Dedupe key = ``(final_url or redirect_url, company, title, location)`` each stripped +
+lowercased. First occurrence wins, order preserved.
+
+Operates on ``Job``, not raw provider JSON — the null-handling this module used to do by
+hand now lives in ``adzuna.client._to_job`` (see tests there for the F1 regression that
+motivated it).
 """
 
 from typing import Any
 
 from jdparser.adzuna.dedupe import _key, dedupe
+from jdparser.jobs import Job
 
 
 def _job(
@@ -16,15 +20,21 @@ def _job(
     company: str = "Acme Inc",
     title: str = "Senior Backend Engineer",
     location: str = "Austin, TX",
-    **extra: Any,
-) -> dict[str, Any]:
-    return {
-        "redirect_url": redirect_url,
-        "company": {"display_name": company},
-        "title": title,
-        "location": {"display_name": location},
-        **extra,
-    }
+    id: str = "",
+    description: str = "",
+    final_url: str | None = None,
+    **raw: Any,
+) -> Job:
+    return Job(
+        id=id,
+        title=title,
+        company=company,
+        location=location,
+        description=description,
+        redirect_url=redirect_url,
+        final_url=final_url,
+        raw=raw,
+    )
 
 
 def test_identical_jobs_collapse_to_one() -> None:
@@ -32,7 +42,7 @@ def test_identical_jobs_collapse_to_one() -> None:
     jobs = [_job(id="a"), _job(id="b")]
     out = dedupe(jobs)
     assert len(out) == 1
-    assert out[0]["id"] == "a"  # first occurrence wins
+    assert out[0].id == "a"  # first occurrence wins
 
 
 def test_case_and_whitespace_variants_collapse() -> None:
@@ -60,7 +70,7 @@ def test_distinct_jobs_preserved() -> None:
     ]
     out = dedupe(jobs)
     assert len(out) == 5
-    assert [j["id"] for j in out] == ["base", "diff_url", "diff_company", "diff_title", "diff_loc"]
+    assert [j.id for j in out] == ["base", "diff_url", "diff_company", "diff_title", "diff_loc"]
 
 
 def test_order_is_stable() -> None:
@@ -73,7 +83,7 @@ def test_order_is_stable() -> None:
         _job(id="5", title="B"),  # dup of #2
     ]
     out = dedupe(jobs)
-    assert [j["id"] for j in out] == ["1", "2", "4"]
+    assert [j.id for j in out] == ["1", "2", "4"]
 
 
 def test_final_url_takes_precedence_over_redirect_url() -> None:
@@ -84,36 +94,16 @@ def test_final_url_takes_precedence_over_redirect_url() -> None:
     assert len(out) == 1  # same final_url collapses despite different redirect_url
 
 
-def test_missing_nested_keys_do_not_crash() -> None:
-    """Jobs with no company/location/title/redirect_url are handled, not crashed."""
+def test_all_empty_fields_do_not_crash() -> None:
+    """Jobs whose fields all normalized to "" key to ("","","","") and collapse."""
     sparse = [
-        {},  # nothing at all
-        {"title": "Engineer"},  # no company/location/url
-        {"company": {}, "location": {}},  # empty nested dicts
-        {"redirect_url": "https://r/x"},
+        _job(id="empty1", redirect_url="", company="", title="", location=""),
+        _job(id="titled", redirect_url="", company="", title="Engineer", location=""),
+        _job(id="empty2", redirect_url="", company="", title="", location=""),
+        _job(id="urled", redirect_url="https://r/x", company="", title="", location=""),
     ]
     out = dedupe(sparse)
-    # {} and {"company":{},"location":{}} both key to ("","","","") → collapse;
-    # {"title":"Engineer"} and {"redirect_url":...} are distinct.
-    assert len(out) == 3
-    assert out[0] == {}
-
-
-def test_explicit_null_nested_keys_do_not_crash() -> None:
-    """A key PRESENT but null is not the same as a key absent — Adzuna sends both.
-
-    ``.get("company", {})`` returns the default only when the key is missing; an explicit
-    ``"company": null`` yields ``None`` and the chained ``.get`` raises. Since ``dedupe_jobs``
-    is a top-level node with no try/except, that AttributeError propagates out of the graph
-    and fails the WHOLE run — every other job in the pull is lost to one malformed listing.
-    """
-    jobs = [
-        {"id": "a", "title": "Engineer", "company": None, "location": None, "redirect_url": "https://r/1"},
-        {"id": "b", "title": "Engineer", "company": None, "location": None, "redirect_url": "https://r/2"},
-    ]
-    out = dedupe(jobs)
-    assert [j["id"] for j in out] == ["a", "b"]  # distinct URLs -> both kept
-    assert _key(jobs[0]) == ("https://r/1", "", "engineer", "")
+    assert [j.id for j in out] == ["empty1", "titled", "urled"]
 
 
 def test_empty_input_returns_empty() -> None:
@@ -126,5 +116,5 @@ def test_key_normalization() -> None:
     assert k == ("https://r/1", "acme", "t", "l")
 
 
-def test_key_missing_keys_returns_empty_strings() -> None:
-    assert _key({}) == ("", "", "", "")
+def test_key_all_empty_fields_returns_empty_strings() -> None:
+    assert _key(_job(redirect_url="", company="", title="", location="")) == ("", "", "", "")

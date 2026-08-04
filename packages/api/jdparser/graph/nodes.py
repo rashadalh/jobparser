@@ -32,6 +32,7 @@ from jdparser.config import (
     now_iso,
 )
 from jdparser.graph.state import JobMatchState
+from jdparser.jobs import Job
 from jdparser.llm.resume_profiler import profile_resume
 from jdparser.llm.schemas import (
     AdzunaQuery,
@@ -179,7 +180,7 @@ def run_adzuna_search(state: JobMatchState) -> NodeResult:
     raw_plan = state["search_plan"]
     assert raw_plan is not None
     queries = [AdzunaQuery.model_validate(q) for q in raw_plan]
-    results: list[dict[str, Any]] = []  # reason: heterogeneous Adzuna JSON (SPEC §3.8.1)
+    results: list[Job] = []
     errors: list[dict[str, Any]] = []   # reason: ErrorRecord payloads (SPEC §3.10)
     for q in queries:                                   # continue-on-partial-failure (policy lives here)
         try:
@@ -190,19 +191,20 @@ def run_adzuna_search(state: JobMatchState) -> NodeResult:
                     job_id=None, stage="adzuna_search", code=e.code, message=e.message
                 ).model_dump()
             )
-    return {"adzuna_results": results, "errors": errors}
+    return {"adzuna_results": [j.model_dump() for j in results], "errors": errors}
 
 
 def dedupe_jobs(state: JobMatchState) -> NodeResult:
-    return {"deduped_jobs": dedupe(state["adzuna_results"])}    # adzuna/dedupe.py
+    jobs = [Job.model_validate(j) for j in state["adzuna_results"]]
+    return {"deduped_jobs": [j.model_dump() for j in dedupe(jobs)]}   # adzuna/dedupe.py
 
 
-def _screened_out_entry(j: dict[str, Any], reason: str) -> dict[str, Any]:
+def _screened_out_entry(j: Job, reason: str) -> dict[str, Any]:
     return {
-        "job_id": str(j.get("id", "")),
-        "title": j.get("title", ""),
-        "company": (j.get("company") or {}).get("display_name", ""),
-        "location": (j.get("location") or {}).get("display_name", ""),
+        "job_id": j.id,
+        "title": j.title,
+        "company": j.company,
+        "location": j.location,
         # "off_field" | "agency" (recruitment agency, not opted in) | "over_cap" (past budget)
         "reason": reason,
     }
@@ -222,10 +224,11 @@ def screen_jobs(state: JobMatchState) -> NodeResult:
 
     Fault-tolerant: a screen failure, or a screen that would drop *everything*, falls back
     to keeping the deduped pool — but the cap is ALWAYS applied as a final ceiling."""
-    jobs = state["deduped_jobs"]
+    raw_jobs = state["deduped_jobs"]
     raw_profile = state["resume_profile"]
-    if not jobs or raw_profile is None:
+    if not raw_jobs or raw_profile is None:
         return {}
+    jobs = [Job.model_validate(j) for j in raw_jobs]
     profile = ResumeProfile.model_validate(raw_profile)
     include_agencies = state.get("include_agencies", False)
     errors: list[dict[str, Any]] = []
@@ -239,18 +242,18 @@ def screen_jobs(state: JobMatchState) -> NodeResult:
         errors.append(ErrorRecord(job_id=None, stage="screen", code=e.code, message=e.message).model_dump())
         ranked_ids = []
 
-    by_id = {str(j.get("id")): j for j in jobs}
+    by_id = {j.id: j for j in jobs}
     # in-field jobs in the screener's relevance order, de-duped, then everything it dropped
     kept_relevant = [by_id[i] for i in dict.fromkeys(ranked_ids) if i in by_id]
-    relevant = {str(j.get("id")) for j in kept_relevant}
-    off_field = [j for j in jobs if str(j.get("id")) not in relevant]
+    relevant = {j.id for j in kept_relevant}
+    off_field = [j for j in jobs if j.id not in relevant]
 
-    agency_excluded: list[dict[str, Any]] = []
+    agency_excluded: list[Job] = []
     if kept_relevant:
         # Agency = a second relevance dimension: deprioritize to the tail (direct employers
         # fill the eval budget first); drop entirely unless the run opted in.
-        directs = [j for j in kept_relevant if str(j.get("id")) not in agency_ids]
-        agencies = [j for j in kept_relevant if str(j.get("id")) in agency_ids]
+        directs = [j for j in kept_relevant if j.id not in agency_ids]
+        agencies = [j for j in kept_relevant if j.id in agency_ids]
         ordered = directs + agencies if include_agencies else directs
         if not include_agencies:
             agency_excluded = agencies
@@ -263,15 +266,16 @@ def screen_jobs(state: JobMatchState) -> NodeResult:
     kept = ordered[:SCREEN_EVAL_CAP]
     over_cap = ordered[SCREEN_EVAL_CAP:]
     # Tag kept agencies so the "Agency" badge rides through to the EvaluatedJob.
-    for j in kept:
-        if str(j.get("id")) in agency_ids:
-            j["is_recruitment_agency"] = True
+    kept = [
+        j.model_copy(update={"is_recruitment_agency": True}) if j.id in agency_ids else j
+        for j in kept
+    ]
     screened_out = (
         [_screened_out_entry(j, "off_field") for j in dropped_off_field]
         + [_screened_out_entry(j, "agency") for j in agency_excluded]
         + [_screened_out_entry(j, "over_cap") for j in over_cap]
     )
-    out: NodeResult = {"deduped_jobs": kept}
+    out: NodeResult = {"deduped_jobs": [j.model_dump() for j in kept]}
     if screened_out:
         out["screened_out"] = screened_out
     if errors:

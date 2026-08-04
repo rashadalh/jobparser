@@ -1,11 +1,11 @@
 """Adzuna discovery client — SPEC §3.8.1, §4.5, §6.1, §6.4.
 
-Executes a validated search plan against the Adzuna jobs API and flattens the
-results. ``run_search_plan`` raises on the first failure; the graph node owns
-the continue-on-partial-failure policy (IMPLEMENTATION_ADZUNA.md — canonical).
+Executes a validated search plan against the Adzuna jobs API and normalizes the
+results into ``Job``. ``run_search_plan`` raises on the first failure; the graph node
+owns the continue-on-partial-failure policy (IMPLEMENTATION_ADZUNA.md — canonical).
 
-Raw Adzuna job dicts are heterogeneous JSON we pass through untouched, hence
-``dict[str, Any]`` / ``list[dict[str, Any]]`` below.
+**This module is the ONLY place that reads Adzuna's raw JSON shape.** Everything
+downstream takes ``Job`` (see ``jdparser/jobs.py``).
 """
 
 from typing import Any
@@ -21,6 +21,7 @@ from jdparser.config import (
     HTTP_MAX_RETRIES,
     JDParserError,
 )
+from jdparser.jobs import Job
 from jdparser.llm.schemas import AdzunaQuery
 
 
@@ -59,9 +60,30 @@ def _params(q: AdzunaQuery) -> dict[str, str | int]:
     return p
 
 
-# reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
-def search(query: AdzunaQuery, page: int) -> list[dict[str, Any]]:
-    """One Adzuna API page (``page`` is a 1-based path segment) → raw job dicts.
+def _to_job(raw: dict[str, Any]) -> Job:
+    """Normalize one raw Adzuna result into a ``Job``.
+
+    Every nested access uses ``(x or {})`` rather than ``.get(k, {})``: Adzuna sends these
+    keys present-but-null as well as absent, and a default only covers the absent case. That
+    distinction is not academic — it crashed whole runs (REFACTOR_AUDIT F1).
+
+    A result with no ``id`` gets an empty one; the subgraph substitutes a surrogate rather
+    than dropping the job.
+    """
+    return Job(
+        id=str(raw.get("id") or ""),
+        title=raw.get("title") or "",
+        company=(raw.get("company") or {}).get("display_name") or "",
+        location=(raw.get("location") or {}).get("display_name") or "",
+        description=raw.get("description") or "",
+        redirect_url=raw.get("redirect_url") or "",
+        final_url=raw.get("final_url"),
+        raw=raw,
+    )
+
+
+def search(query: AdzunaQuery, page: int) -> list[Job]:
+    """One Adzuna API page (``page`` is a 1-based path segment) → normalized ``Job``s.
 
     401/403 → ``ADZUNA_AUTH``; any other status ≥ 400 → ``ADZUNA_HTTP``.
     """
@@ -75,18 +97,16 @@ def search(query: AdzunaQuery, page: int) -> list[dict[str, Any]]:
         raise JDParserError(code="ADZUNA_HTTP", message=f"{r.status_code}: {r.text[:200]}")
     # reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
     results: list[dict[str, Any]] = r.json().get("results", [])
-    return results
+    return [_to_job(raw) for raw in results]
 
 
-# reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
-def run_search_plan(plan: list[AdzunaQuery]) -> list[dict[str, Any]]:
+def run_search_plan(plan: list[AdzunaQuery]) -> list[Job]:
     """All queries × pages, flattened.
 
     Raises on the first failure (the graph node decides whether to continue on
     partial failure — IMPLEMENTATION_ADZUNA.md). No try/except here by design.
     """
-    # reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
-    out: list[dict[str, Any]] = []
+    out: list[Job] = []
     for q in plan:
         for page in range(1, q.pages + 1):  # q.pages ≤ ADZUNA_MAX_PAGES
             out.extend(search(q, page))

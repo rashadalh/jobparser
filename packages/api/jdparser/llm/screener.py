@@ -1,8 +1,8 @@
 """screener — `screen_relevance` (relevance pre-screen, Gemini 3.1 Flash Lite).
 
 A COARSE, cheap, same-field filter run BEFORE the expensive per-job evaluation
-(resolve→fetch→extract→parse→judge). It reads only the Adzuna title + snippet we
-already have (no fetch) and returns the ids of jobs plausibly in the candidate's field,
+(resolve→fetch→extract→parse→judge). It reads only the title + snippet already on the
+search result (no fetch) and returns the ids of jobs plausibly in the candidate's field,
 so thematically-wrong jobs (a keyword collision like food-safety "Product Assurance"
 for a software QA tester) never reach the fan-out. Validation failure -> SCREEN_INVALID.
 
@@ -14,9 +14,9 @@ unbounded pool eventually overflows max_tokens.
 
 import json
 from itertools import zip_longest
-from typing import Any
 
 from jdparser.config import LLM_NODES, SCREEN_BATCH_SIZE, JDParserError
+from jdparser.jobs import Job
 from jdparser.llm.client import _call
 from jdparser.llm.schemas import JobScreen, ResumeProfile
 
@@ -53,8 +53,8 @@ flag the caller applies.
 """
 
 
-def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
-    """Coarse pre-screen over Adzuna title/company/snippet: the in-field ``jobs`` (by id)
+def screen_relevance(profile: ResumeProfile, jobs: list[Job]) -> JobScreen:
+    """Coarse pre-screen over title/company/snippet: the in-field ``jobs`` (by id)
     RANKED most-relevant-first (caller caps to the top N — see SCREEN_EVAL_CAP), plus the
     ``agency_job_ids`` subset that look like recruitment-agency postings (caller drops
     those unless the run opted in)."""
@@ -66,10 +66,10 @@ def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobS
     }
     items = [
         {
-            "id": str(job.get("id", "")),
-            "title": job.get("title", ""),
-            "company": (job.get("company") or {}).get("display_name", ""),
-            "snippet": (job.get("description") or "")[:200],
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "snippet": job.description[:200],
         }
         for job in jobs
     ]
@@ -77,7 +77,7 @@ def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobS
     return _call(LLM_NODES["screener"], _SYSTEM, user, JobScreen, "SCREEN_INVALID")
 
 
-def screen_relevance_batched(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
+def screen_relevance_batched(profile: ResumeProfile, jobs: list[Job]) -> JobScreen:
     """Chunk ``jobs`` into <= SCREEN_BATCH_SIZE batches and screen each independently.
 
     ``screen_relevance``'s output enumerates every relevant/agency id, so its token cost

@@ -27,6 +27,7 @@ from jdparser.extract.fetch import fetch
 from jdparser.extract.quality import check_quality
 from jdparser.extract.resolve import resolve_final_url
 from jdparser.graph.state import JobEvalState
+from jdparser.jobs import Job
 from jdparser.llm.fit_judge import judge_fit
 from jdparser.llm.jd_parser import parse_jd_requirements
 from jdparser.llm.schemas import (
@@ -47,14 +48,15 @@ Marker = dict[str, Any]  # reason: EvaluatedJob payload + transient _code/_msg (
 
 
 # --- helpers -----------------------------------------------------------------
+def _job(s: JobEvalState) -> Job:
+    """The worker's ``Job``, injected via ``Send`` as a model_dump (§3.2)."""
+    return Job.model_validate(s["job"])
+
+
 def _job_meta(s: JobEvalState) -> tuple[str, str, str, str]:
-    """(job_id, title, company, location) from the raw Adzuna job dict (§3.8.1)."""
-    job = s["job"]
-    job_id = str(job.get("id") or f"surrogate:{uuid4()}")
-    title = job.get("title") or ""
-    company = (job.get("company") or {}).get("display_name") or ""
-    location = (job.get("location") or {}).get("display_name") or ""
-    return job_id, title, company, location
+    """(job_id, title, company, location). A source with no id gets a surrogate."""
+    job = _job(s)
+    return job.id or f"surrogate:{uuid4()}", job.title, job.company, job.location
 
 
 def _jd_char_len(s: JobEvalState) -> int | None:
@@ -76,13 +78,13 @@ def _marker(s: JobEvalState, stage: FailureStage, code: str, msg: str) -> Marker
         company=company,
         location=location,
         final_url=s.get("final_url"),
-        source=s["job"],
+        source=_job(s).raw,   # the untouched provider payload — persisted in the run record
         jd_char_len=_jd_char_len(s),
         requirements=JobRequirements.model_validate(raw_req) if raw_req else None,
         judgment=FitJudgment.model_validate(raw_judg) if raw_judg else None,
         status="failed",
         failure_stage=stage,
-        is_recruitment_agency=bool(s["job"].get("is_recruitment_agency")),  # tagged at the screen
+        is_recruitment_agency=_job(s).is_recruitment_agency,  # tagged at the screen
     )
     marker: Marker = ej.model_dump()
     marker["_code"] = code
@@ -120,13 +122,13 @@ def _evaluated_job(s: JobEvalState) -> NodeResult:
         company=company,
         location=location,
         final_url=s.get("final_url"),
-        source=s["job"],
+        source=_job(s).raw,   # the untouched provider payload — persisted in the run record
         jd_char_len=_jd_char_len(s),
         requirements=JobRequirements.model_validate(raw_req),
         judgment=judgment,
         status=_derive_status(judgment),
         failure_stage=None,
-        is_recruitment_agency=bool(s["job"].get("is_recruitment_agency")),  # tagged at the screen
+        is_recruitment_agency=_job(s).is_recruitment_agency,  # tagged at the screen
     )
     return ej.model_dump()
 
@@ -138,7 +140,7 @@ def _evaluated_job(s: JobEvalState) -> NodeResult:
 # ``add_conditional_edges`` are unaffected and keep ``s``.)
 def resolve_url(state: JobEvalState) -> NodeResult:
     try:
-        return {"final_url": resolve_final_url(state["job"].get("redirect_url", ""))}
+        return {"final_url": resolve_final_url(_job(state).redirect_url)}
     except JDParserError as e:
         return {"result": [_fail(state, "resolve", e)]}     # marker consumed by router
 
@@ -187,7 +189,7 @@ def judge_fit_node(state: JobEvalState) -> NodeResult:
     try:
         profile = ResumeProfile.model_validate(state["profile"])    # injected via Send (SPEC §3.2)
         req = JobRequirements.model_validate(raw_req)
-        title = state["job"].get("title") or ""          # job title is the clearest seniority signal
+        title = _job(state).title                        # job title is the clearest seniority signal
         notes = [CandidateNote.model_validate(n) for n in state.get("notes", [])]
         j = judge_fit(profile, req, title, notes)         # gemini-3.1-flash-lite
         return {"judgment": j.model_dump()}

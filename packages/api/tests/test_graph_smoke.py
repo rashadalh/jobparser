@@ -23,6 +23,8 @@ from jdparser.config import (
 from jdparser.graph.build import build_graph
 from jdparser.graph.nodes import aggregate_matches, is_qualified
 from jdparser.graph.state import JobMatchState
+from jdparser.jobs import Job
+from jdparser.adzuna.client import _to_job
 from jdparser.graph.subgraph import _evaluated_job
 from jdparser.llm.schemas import (
     AdzunaQuery,
@@ -39,9 +41,9 @@ from jdparser.llm.schemas import (
 )
 
 
-def _fake_screen(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
+def _fake_screen(profile: ResumeProfile, jobs: list[Job]) -> JobScreen:
     """Default screen fake: keep every job (relevance filtering tested separately)."""
-    return JobScreen(relevant_job_ids=[str(j.get("id")) for j in jobs])
+    return JobScreen(relevant_job_ids=[j.id for j in jobs])
 
 RESUME = str(Path(__file__).parent / "fixtures" / "sample_resume.pdf")
 
@@ -112,7 +114,8 @@ def _judgment(decision: str, confidence: float) -> dict[str, Any]:
     ).model_dump()
 
 
-def _job(outcome: str, i: int) -> dict[str, Any]:
+def _raw(outcome: str, i: int) -> dict[str, Any]:
+    """A raw provider result, as the Adzuna API returns it."""
     # outcome is encoded in the redirect_url so the faked subgraph stages can branch
     return {
         "id": f"job-{i}",
@@ -124,6 +127,11 @@ def _job(outcome: str, i: int) -> dict[str, Any]:
     }
 
 
+def _job(outcome: str, i: int) -> Job:
+    """The normalized Job the graph actually carries (see adzuna.client._to_job)."""
+    return _to_job(_raw(outcome, i))
+
+
 def _valid_ej() -> dict[str, Any]:
     """A fully-valid EvaluatedJob payload that passes ``is_qualified``."""
     return {
@@ -132,7 +140,7 @@ def _valid_ej() -> dict[str, Any]:
         "company": "Acme Inc",
         "location": "Austin, TX",
         "final_url": "https://employer.example/job",
-        "source": _job("qualified", 0),
+        "source": _raw("qualified", 0),
         "jd_char_len": 800,
         "requirements": _req().model_dump(),
         "judgment": _judgment("qualified", 0.9),
@@ -144,7 +152,7 @@ def _valid_ej() -> dict[str, Any]:
 def _eval_state(decision: str, confidence: float) -> dict[str, Any]:
     """A JobEvalState reaching ``finalize`` (success path) for ``_evaluated_job``."""
     return {
-        "job": _job("x", 0),
+        "job": _job("x", 0).model_dump(),
         "profile": _profile().model_dump(),
         "final_url": "https://employer.example/job",
         "fetched": None,
@@ -255,7 +263,7 @@ def _initial_state(jobs_ignored: object) -> JobMatchState:
 
 def run_graph(
     monkeypatch: pytest.MonkeyPatch,
-    jobs: list[dict[str, Any]],
+    jobs: list[Job],
     *,
     cache_hit: bool = True,
     profile_counter: dict[str, int] | None = None,
@@ -323,6 +331,24 @@ def test_count_invariant_and_display_is_qualified_subset(monkeypatch: pytest.Mon
     # statuses cover the §3.9 spread
     statuses = sorted(ej["status"] for ej in result["evaluated_jobs"])
     assert statuses == ["failed", "failed", "not_qualified", "qualified", "uncertain"]
+
+
+def test_evaluated_job_source_is_the_untouched_provider_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EvaluatedJob.source must be the raw provider dict, byte-for-byte.
+
+    `source` is persisted into every data/runs/*.json. Introducing the Job model
+    (REFACTOR_AUDIT Phase 2) must not change the on-disk shape — if `source` were built
+    from Job's normalized fields instead of Job.raw, every historical run record would
+    disagree with every new one and nothing would report an error.
+    """
+    raws = [_raw("qualified", 0), _raw("rejected", 1)]
+    result = run_graph(monkeypatch, [_to_job(r) for r in raws])
+
+    by_id = {ej["job_id"]: ej for ej in result["evaluated_jobs"]}
+    for raw in raws:
+        assert by_id[raw["id"]]["source"] == raw   # nested company/location dicts intact
 
 
 # --- §7.1: is_qualified unit gates -------------------------------------------

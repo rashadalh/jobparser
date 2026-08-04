@@ -1,34 +1,30 @@
-"""Adzuna result dedupe — SPEC §4.5. Pure; raises nothing.
+"""Search-result dedupe — SPEC §4.5. Pure; raises nothing.
 
-Key = ``(final_url or redirect_url, company.display_name, title,
-location.display_name)`` with each component stripped + lowercased. First
-occurrence wins; input order is preserved. At dedupe time ``final_url`` is
-usually absent (URL resolution happens later in ``extract/resolve.py``), so the
-key falls back to ``redirect_url`` — adequate for first-pass dedupe.
+Key = ``(final_url or redirect_url, company, title, location)`` with each component
+stripped + lowercased. First occurrence wins; input order is preserved. At dedupe time
+``final_url`` is usually absent (URL resolution happens later in ``extract/resolve.py``),
+so the key falls back to ``redirect_url`` — adequate for first-pass dedupe.
 
-Raw Adzuna job dicts are heterogeneous JSON, hence ``dict[str, Any]``.
+Takes ``Job``, not raw provider JSON: the null-handling this module used to do by hand
+now happens once, in the source client (see ``jdparser/jobs.py``).
 """
 
-from typing import Any
+from jdparser.jobs import Job
 
 
-# reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
-def _key(job: dict[str, Any]) -> tuple[str, str, str, str]:
-    final = (job.get("final_url") or job.get("redirect_url") or "").strip().lower()
-    # `or {}` (not `.get(k, {})`): Adzuna sends these keys PRESENT-but-null as well as
-    # absent, and a default only covers the absent case. Matches the null-safe form already
-    # used in graph/subgraph.py and graph/nodes.py.
-    company = ((job.get("company") or {}).get("display_name") or "").strip().lower()
-    title = (job.get("title") or "").strip().lower()
-    loc = ((job.get("location") or {}).get("display_name") or "").strip().lower()
-    return (final, company, title, loc)
+def _key(job: Job) -> tuple[str, str, str, str]:
+    final = (job.final_url or job.redirect_url).strip().lower()
+    return (
+        final,
+        job.company.strip().lower(),
+        job.title.strip().lower(),
+        job.location.strip().lower(),
+    )
 
 
-# reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
-def dedupe(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def dedupe(jobs: list[Job]) -> list[Job]:
     seen: set[tuple[str, str, str, str]] = set()
-    # reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
-    out: list[dict[str, Any]] = []
+    out: list[Job] = []
     for j in jobs:
         k = _key(j)
         if k in seen:
