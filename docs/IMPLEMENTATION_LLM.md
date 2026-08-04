@@ -1,9 +1,9 @@
-# IMPLEMENTATION_LLM — the four LLM agents (OpenRouter)
+# IMPLEMENTATION_LLM — the six LLM agents (OpenRouter)
 
 > Owns all Pydantic schemas and the four LLM nodes. References: SPEC §3.3–§3.8.4,
 > §4.4, §6.3, §6.4. **Provider is OpenRouter** (OpenAI-compatible) accessed via the
 > **OpenAI Python SDK** (`openai`) + **`instructor`** for Pydantic-validated
-> structured output. Models per SPEC §6.3 routing table: **GLM 5.2** (`z-ai/glm-5.2`)
+> structured output. Models per SPEC §6.3 routing table: **Gemini 3.1 Flash Lite** (`google/gemini-3.1-flash-lite`)
 > for logic, **Gemini 3.1 Flash Lite** (`google/gemini-3.1-flash-lite`) for text
 > extraction.
 
@@ -11,7 +11,7 @@
 
 Each LLM has one job, one schema, one failure mode (per the overview). Outputs are
 strict JSON validated against Pydantic models by `instructor`, which re-asks the
-model on a validation failure before raising. Logic work → GLM 5.2; literal JD text
+model on a validation failure before raising. Logic work → Gemini 3.1 Flash Lite; literal JD text
 extraction → Gemini 3.1 Flash Lite.
 
 ## Files this area owns
@@ -64,7 +64,7 @@ startup (`LLM_MODEL_<NODE>` / `LLM_TEMP_<NODE>` / `LLM_MAX_TOKENS_<NODE>` /
 `LLM_REASONING_<NODE>`); the defaults are baked into `config.py`. Agents pass their
 `LLM_NODES[...]` entry to `_call`; do not hardcode model/tokens at the call site.
 
-## Canonical call shape (kept identical across all four agents)
+## Canonical call shape (kept identical across all six agents)
 
 ```python
 # canonical — copy this shape; agents differ only by (cfg, schema, err_code, prompts)
@@ -143,7 +143,7 @@ Notes / locked decisions:
 
 ## `resume_profiler.py` — `_call(LLM_NODES["profiler"], …, ResumeProfile, "PROFILE_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): GLM 5.2, temp 0.2, `max_tokens` 8000, reasoning off.
+Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite, temp 0.2, `max_tokens` 8000, reasoning off.
 
 ```python
 def profile_resume(resume_text: str) -> ResumeProfile
@@ -156,10 +156,10 @@ do not fabricate skills not supported by the text. Truncate `resume_text` to
 
 ## `search_planner.py` — `_call(LLM_NODES["planner"], …, SearchPlan, "PLAN_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): GLM 5.2, temp 0.3, `max_tokens` 4000, reasoning off.
+Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite, temp 0.3, `max_tokens` 4000, reasoning off.
 
 ```python
-def plan_adzuna_queries(profile: ResumeProfile) -> list[AdzunaQuery]
+def plan_queries(profile: ResumeProfile) -> list[AdzunaQuery]
 ```
 Returns `list[AdzunaQuery]`, length 1..`SEARCH_PLAN_MAX_QUERIES` (6). Because
 `response_model` must be a single schema, define a wrapper model in `schemas.py`:
@@ -191,7 +191,7 @@ Truncate `jd_text` to `MAX_JD_CHARS` (60000).
 
 ## `fit_judge.py` — `_call(LLM_NODES["judge"], …, FitJudgment, "JUDGE_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): GLM 5.2, temp 0.2, `max_tokens` 10000, reasoning
+Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite, temp 0.2, `max_tokens` 10000, reasoning
 **medium** (the one node where reasoning earns its keep; its ceiling covers reasoning +
 JSON — bumped from `low`: thematic/functional fit needs more than mechanical skill-list
 matching).
@@ -225,7 +225,7 @@ JSON in the user message.
 - Truncation guard: a faked completion with `finish_reason=="length"` raises
   `JDParserError(code="LLM_TRUNCATED")`, not a `*_INVALID`.
 - A live smoke (gated behind `OPENROUTER_API_KEY`, run in M2 exit-check by the
-  orchestrator, not the unit suite): `profile_resume(sample_text)` (GLM 5.2) returns a
+  orchestrator, not the unit suite): `profile_resume(sample_text)` (Gemini 3.1 Flash Lite) returns a
   valid `ResumeProfile` with ≥1 evidence entry; `parse_jd_requirements(sample_jd)`
   (Gemini Flash Lite) returns a valid `JobRequirements`; `judge_fit` on a contrived
   profile+requirements returns a `FitJudgment` whose `decision` is one of the three

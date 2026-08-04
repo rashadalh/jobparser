@@ -1,8 +1,8 @@
 """screener — `screen_relevance` (relevance pre-screen, Gemini 3.1 Flash Lite).
 
 A COARSE, cheap, same-field filter run BEFORE the expensive per-job evaluation
-(resolve→fetch→extract→parse→judge). It reads only the Adzuna title + snippet we
-already have (no fetch) and returns the ids of jobs plausibly in the candidate's field,
+(resolve→fetch→extract→parse→judge). It reads only the title + snippet already on the
+search result (no fetch) and returns the ids of jobs plausibly in the candidate's field,
 so thematically-wrong jobs (a keyword collision like food-safety "Product Assurance"
 for a software QA tester) never reach the fan-out. Validation failure -> SCREEN_INVALID.
 
@@ -14,47 +14,18 @@ unbounded pool eventually overflows max_tokens.
 
 import json
 from itertools import zip_longest
-from typing import Any
 
 from jdparser.config import LLM_NODES, SCREEN_BATCH_SIZE, JDParserError
+from jdparser.jobs import Job
 from jdparser.llm.client import _call
+from jdparser.llm.prompts import load
 from jdparser.llm.schemas import JobScreen, ResumeProfile
 
-_SYSTEM = """\
-You are a job-relevance screener. Given a candidate profile and a list of jobs (each \
-with an id, title, company, and a short description snippet), return the ids of jobs \
-that are PLAUSIBLY IN THE CANDIDATE'S FIELD AND FUNCTION — the same kind of work, even \
-if not a perfect fit on seniority or specific skills.
-
-This is a COARSE filter that runs BEFORE a detailed fit evaluation, so be INCLUSIVE: \
-keep anything in the candidate's field; only DROP jobs clearly in an UNRELATED industry \
-or function. Example: for a software QA / manual tester, KEEP "QA Analyst", "Software \
-Tester", "QA Engineer"; DROP a food-safety "Product Safety Assurance" role at a grocery \
-chain, a financial "Assurance" auditor role, or a theatrical "Lighting Designer" role — \
-those merely share a keyword. When genuinely unsure, KEEP the job (the later judge \
-assesses real fit). Return ONLY the ids of the jobs to keep, from the ids provided.
-
-ORDER MATTERS: return the kept ids RANKED most-relevant-first. The strongest matches to \
-the candidate's field, function, seniority, and skills go first; weaker-but-still-in-field \
-matches last. A downstream step may only have budget to evaluate the top N, so the best \
-candidates must come first.
-
-SEPARATELY, in `agency_job_ids`, list the ids (a SUBSET of the kept ids) that look like \
-THIRD-PARTY RECRUITMENT / STAFFING AGENCY postings — a recruiter placing the candidate at \
-a different client employer, rather than the employer hiring directly. Judge from the \
-company name and the snippet: signals include a known staffing/recruiting firm as the \
-company (e.g. Robert Half, Hays, Michael Page, Adecco, Randstad, Kelly, Aerotek, \
-TEKsystems, Insight Global, Robert Walters, Manpower) or snippet phrasing like "our \
-client", "on behalf of our client", "we are recruiting for", "acting as an employment \
-agency". A company hiring for ITSELF (including its own in-house recruiters, and \
-consultancies hiring their own staff) is NOT an agency. When unsure, do NOT list it. \
-Still keep these in `relevant_job_ids` if they are in-field; agency status is a separate \
-flag the caller applies.
-"""
+_SYSTEM = load("screener")
 
 
-def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
-    """Coarse pre-screen over Adzuna title/company/snippet: the in-field ``jobs`` (by id)
+def screen_relevance(profile: ResumeProfile, jobs: list[Job]) -> JobScreen:
+    """Coarse pre-screen over title/company/snippet: the in-field ``jobs`` (by id)
     RANKED most-relevant-first (caller caps to the top N — see SCREEN_EVAL_CAP), plus the
     ``agency_job_ids`` subset that look like recruitment-agency postings (caller drops
     those unless the run opted in)."""
@@ -66,10 +37,10 @@ def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobS
     }
     items = [
         {
-            "id": str(job.get("id", "")),
-            "title": job.get("title", ""),
-            "company": (job.get("company") or {}).get("display_name", ""),
-            "snippet": (job.get("description") or "")[:200],
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "snippet": job.description[:200],
         }
         for job in jobs
     ]
@@ -77,7 +48,7 @@ def screen_relevance(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobS
     return _call(LLM_NODES["screener"], _SYSTEM, user, JobScreen, "SCREEN_INVALID")
 
 
-def screen_relevance_batched(profile: ResumeProfile, jobs: list[dict[str, Any]]) -> JobScreen:
+def screen_relevance_batched(profile: ResumeProfile, jobs: list[Job]) -> JobScreen:
     """Chunk ``jobs`` into <= SCREEN_BATCH_SIZE batches and screen each independently.
 
     ``screen_relevance``'s output enumerates every relevant/agency id, so its token cost

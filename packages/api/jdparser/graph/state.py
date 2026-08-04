@@ -39,8 +39,8 @@ class JobMatchState(TypedDict):
     max_days_old: int | None              # per-run listing-age filter in days (None/<=0 = any age)
     include_agencies: bool                # True = let recruitment-agency listings through the screen
     search_plan: list[_Json] | None       # list[AdzunaQuery.model_dump()]
-    adzuna_results: list[_Json]           # raw Adzuna job dicts (§3.8.1)
-    deduped_jobs: list[_Json]             # deduped (and relevance-screened) raw Adzuna job dicts
+    job_results: list[_Json]              # list[Job.model_dump()] (normalized at the source)
+    deduped_jobs: list[_Json]             # list[Job.model_dump()], deduped + relevance-screened
     screened_out: list[_Json]             # jobs dropped by the relevance pre-screen (off-field)
 
     # --- evaluation (fan-out reducers; see §3.10 for lifecycle) ---
@@ -50,7 +50,7 @@ class JobMatchState(TypedDict):
 
 
 class JobEvalState(TypedDict):
-    job: _Json                  # one deduped Adzuna job dict (§3.8.1)
+    job: _Json                  # one deduped Job.model_dump() (§3.8.1)
     profile: _Json              # ResumeProfile.model_dump() injected via Send (§3.2)
     # Named `notes`, NOT `candidate_notes`: a JobEvalState field sharing a JobMatchState
     # channel's name gets auto-propagated back into that parent channel on every subgraph
@@ -99,7 +99,7 @@ def initial_state(
         "max_days_old": max_days_old,
         "include_agencies": include_agencies,
         "search_plan": None,
-        "adzuna_results": [],
+        "job_results": [],
         "deduped_jobs": [],
         "screened_out": [],
         "evaluated_jobs": [],

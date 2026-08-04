@@ -11,6 +11,16 @@ ENV UV_LINK_MODE=copy \
     UV_FROZEN=1 \
     PYTHONUNBUFFERED=1
 
+# The display the entrypoint's Xvfb serves, and that Playwright's headed retry renders
+# into. It lives HERE rather than only in entrypoint.sh because a shell `export` reaches
+# the app the entrypoint execs and nothing else — `docker exec` gets the image's ENV, not
+# the entrypoint's environment. Without this, an exec'd shell (or a CLI run:
+# `docker exec jdparser-api-1 uv run python -m jdparser resume.pdf`) had no DISPLAY and
+# every headed retry failed with "Missing X server or $DISPLAY", even though Xvfb was
+# running perfectly well in that same container. entrypoint.sh reads this value rather
+# than hardcoding its own, so there is one definition.
+ENV DISPLAY=:99
+
 WORKDIR /app
 
 # 1) Dependency layer — cached unless uv.lock / pyproject.toml change. Installs the

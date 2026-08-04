@@ -20,8 +20,8 @@ export default function ResumeUpload({
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
       <h2 className="text-base font-semibold text-gray-900">Upload your resume</h2>
       <p className="mt-1 text-sm text-gray-500">
-        PDF, DOCX, or TXT. We&apos;ll match you against live job postings and show
-        only the ones you qualify for, with cited evidence.
+        PDF, DOCX, or TXT. We&apos;ll check you against live job postings and show
+        only the ones you qualify for, along with the evidence for each.
       </p>
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -38,7 +38,7 @@ export default function ResumeUpload({
           onClick={() => {
             if (file) onParse(file);
           }}
-          title="Parse the resume into a profile only — no job search"
+          title="Just build the profile. This won&apos;t search for jobs."
           className="shrink-0 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {parsing ? "Parsing…" : "Parse only"}

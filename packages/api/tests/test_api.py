@@ -19,10 +19,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from builders import profile, stored_profile
 from jdparser import server
-from jdparser.config import RUNS_DIR, UPLOADS_DIR, JDParserError
+from jdparser.config import PARSER_VERSION, RUNS_DIR, SCHEMA_VERSION, UPLOADS_DIR, JDParserError
 from jdparser.llm.schemas import CandidateNote, ResumeProfile, StoredResumeProfile
-from jdparser.runs.store import create_run
+from jdparser.runs.store import create_run, get_run, list_runs, update_run
 
 client = TestClient(server.app)
 
@@ -171,6 +172,52 @@ def test_status_qualified_but_gated_lands_in_rejected(
     assert set(j["job_id"] for j in rec["rejected"]) == {"job-r", "job-q2"}  # job-q2 no longer lost
 
 
+def test_run_record_captures_llm_spend(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """Whatever the graph spends must land on the run record the frontend polls."""
+    from jdparser.llm.usage import record_completion
+
+    class _Usage:
+        prompt_tokens, completion_tokens, cost = 1000, 200, 0.0042
+        model_extra: dict[str, Any] = {}
+
+    class _Completion:
+        usage = _Usage()
+
+    class _SpendingGraph(_FakeGraph):
+        def stream(self, init: Any, config: Any = None, stream_mode: Any = None) -> Any:
+            for chunk in super().stream(init, config, stream_mode):
+                record_completion(_Completion())   # the graph making a billed call
+                yield chunk
+
+    monkeypatch.setattr(server, "_graph", _SpendingGraph(final=_final_state()))
+    run_id = _post_run().json()["run_id"]
+    runs_cleanup.append(run_id)
+
+    usage = client.get(f"/api/runs/{run_id}").json()["usage"]
+    assert usage["calls"] == 4          # 1 screen_jobs chunk + 3 job_eval chunks
+    assert usage["prompt_tokens"] == 4000
+    assert usage["cost_usd"] == 0.0168
+    assert usage["cost_complete"] is True
+
+
+def test_failed_run_still_reports_what_it_spent(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """A run that dies partway still cost money; hiding that is the wrong direction."""
+    monkeypatch.setattr(
+        server, "_graph", _FakeGraph(exc=JDParserError(code="EVAL_COUNT_MISMATCH", message="x"))
+    )
+    run_id = _post_run().json()["run_id"]
+    runs_cleanup.append(run_id)
+
+    rec = client.get(f"/api/runs/{run_id}").json()
+    assert rec["status"] == "failed"
+    assert rec["usage"] is not None      # present even on the failure path
+    assert rec["usage"]["calls"] == 0
+
+
 # --- 2. unknown run -> 404 ----------------------------------------------------
 def test_get_unknown_run_404() -> None:
     resp = client.get(f"/api/runs/{uuid.uuid4()}")
@@ -204,6 +251,32 @@ def test_health() -> None:
     assert resp.json() == {"status": "ok"}
 
 
+def test_legacy_adzuna_search_stage_still_loads(runs_cleanup: list[str]) -> None:
+    """A run record written BEFORE the job-source seam must still be readable.
+
+    The search stage was renamed "adzuna_search" -> "job_search" (REFACTOR_AUDIT Phase 3),
+    but the old value is persisted in existing data/runs/*.json. list_runs skips any record
+    that fails validation with a bare `except: continue` — so dropping the old literal from
+    ErrorStage would silently erase the user's run history: no error, no log, no failing
+    test anywhere else. This is that test.
+    """
+    run_id = str(uuid.uuid4())
+    runs_cleanup.append(run_id)
+    rec = create_run(run_id=run_id, user_id="local", resume_file_path="")
+    update_run(
+        run_id,
+        status="completed",
+        errors=[{"job_id": None, "stage": "adzuna_search", "code": "ADZUNA_HTTP",
+                 "message": "500", "detail": None}],
+    )
+    assert rec.run_id == run_id
+
+    reloaded = get_run(run_id)
+    assert reloaded is not None
+    assert reloaded.errors[0]["stage"] == "adzuna_search"
+    assert run_id in {r.run_id for r in list_runs()}   # not swallowed by the listing
+
+
 # --- 5. list endpoints + run-from-profile -------------------------------------
 def test_list_profiles_and_runs_return_lists() -> None:
     p = client.get("/api/profiles")
@@ -226,12 +299,7 @@ def test_run_without_file_or_profile_400() -> None:
 def test_parse_only_returns_profile_without_search(monkeypatch: pytest.MonkeyPatch) -> None:
     from jdparser.llm.schemas import Fingerprint, ResumeProfile
 
-    prof = ResumeProfile(
-        roles=["backend engineer"], skills=["python"], seniority="senior",
-        total_years_experience=5.0, work_periods=[], education=["B.S. CS"], domains=[],
-        work_authorization=[], locations=[], remote_preference="any",
-        employment_types=["full_time"], evidence=[],
-    )
+    prof = profile()
     called = {"n": 0}
 
     def _prof(_text: str) -> ResumeProfile:
@@ -258,17 +326,7 @@ def test_parse_only_returns_profile_without_search(monkeypatch: pytest.MonkeyPat
 
 # --- 6. POST /api/feedback -----------------------------------------------------
 def _stored_profile(cache_key: str, notes: list[CandidateNote] | None = None) -> StoredResumeProfile:
-    profile = ResumeProfile(
-        roles=["backend engineer"], skills=["python"], seniority="senior",
-        total_years_experience=5.0, work_periods=[], education=["B.S. CS"], domains=[],
-        work_authorization=[], locations=[], remote_preference="any",
-        employment_types=["full_time"], evidence=[],
-    )
-    return StoredResumeProfile(
-        id="id-1", user_id="local", cache_key=cache_key, profile=profile,
-        parser_version="1.0.0", schema_version="1.0.0", model="m",
-        created_at="t", updated_at="t", notes=notes or [],
-    )
+    return stored_profile(cache_key=cache_key, notes=notes or [])
 
 
 def _post_completed_run(monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]) -> str:
@@ -301,6 +359,111 @@ def test_feedback_happy_path_distills_and_saves_notes(
     assert saved["record"].notes == canned
 
 
+# --- profile-level notes (feedback with no job attached) ----------------------
+def test_add_profile_note_distills_and_saves(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Feedback about the candidate, not about a job the judge got wrong.
+
+    `job_context` is None here: there is no verdict to correct. The distiller has to be
+    told that explicitly, otherwise the prompt looks for an `outcome` that isn't there.
+    """
+    stored = _stored_profile("ck-1")
+    monkeypatch.setattr(server, "get_profile", lambda key: stored if key == "ck-1" else None)
+    saved: dict[str, Any] = {}
+    monkeypatch.setattr(server, "put_profile", lambda rec: saved.__setitem__("record", rec))
+
+    seen: dict[str, Any] = {}
+
+    def _distill(existing: Any, ctx: Any, text: str) -> list[CandidateNote]:
+        seen["ctx"] = ctx
+        seen["text"] = text
+        return [CandidateNote(note="Will not relocate outside Texas", kind="dealbreaker", source="s")]
+
+    monkeypatch.setattr(server, "distill_notes", _distill)
+
+    resp = client.post("/api/profiles/ck-1/notes", data={"text": "  I won't relocate  "})
+    assert resp.status_code == 200
+    assert seen["ctx"] is None            # no job -> no context
+    assert seen["text"] == "I won't relocate"   # trimmed
+    assert resp.json()["notes"][0]["kind"] == "dealbreaker"
+    assert saved["record"].notes[0].note == "Will not relocate outside Texas"
+
+
+def test_add_profile_note_unknown_profile_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "get_profile", lambda key: None)
+    resp = client.post("/api/profiles/nope/notes", data={"text": "hello"})
+    assert resp.status_code == 404
+
+
+def test_add_profile_note_rejects_blank_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Whitespace would burn an LLM call to distill nothing."""
+    monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("ck-1"))
+    called = {"n": 0}
+    monkeypatch.setattr(server, "distill_notes", lambda *a: called.__setitem__("n", called["n"] + 1))
+    resp = client.post("/api/profiles/ck-1/notes", data={"text": "   "})
+    assert resp.status_code == 400
+    assert called["n"] == 0
+
+
+def test_profiles_listing_exposes_notes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The picker needs the notes inline; the panel renders them without a second fetch."""
+    note = CandidateNote(note="No active clearance", kind="dealbreaker", source="s")
+    # current versions: the endpoint only offers profiles parsed under the live ones
+    current = stored_profile(
+        cache_key="ck-1", notes=[note],
+        parser_version=PARSER_VERSION, schema_version=SCHEMA_VERSION,
+    )
+    monkeypatch.setattr(server, "list_profiles", lambda: [current])
+    body = client.get("/api/profiles").json()
+    assert body[0]["notes"] == [note.model_dump()]
+
+
+def test_delete_profile_note_removes_by_stored_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = [
+        CandidateNote(note="first", kind="context", source="s"),
+        CandidateNote(note="second", kind="dealbreaker", source="s"),
+        CandidateNote(note="third", kind="preference", source="s"),
+    ]
+    stored = _stored_profile("ck-1", notes)
+    monkeypatch.setattr(server, "get_profile", lambda key: stored if key == "ck-1" else None)
+    saved: dict[str, Any] = {}
+    monkeypatch.setattr(server, "put_profile", lambda rec: saved.__setitem__("record", rec))
+
+    resp = client.delete("/api/profiles/ck-1/notes/1")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == "second"
+    assert [n["note"] for n in resp.json()["notes"]] == ["first", "third"]
+    assert [n.note for n in saved["record"].notes] == ["first", "third"]
+
+
+def test_delete_profile_note_does_not_redistill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deletion is the user overruling the model, so the model does not get a vote.
+
+    Re-distilling on delete could reword the survivors or argue the note back in, and
+    would burn an LLM call to do it.
+    """
+    stored = _stored_profile("ck-1", [CandidateNote(note="only", kind="context", source="s")])
+    monkeypatch.setattr(server, "get_profile", lambda key: stored)
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+    called = {"n": 0}
+    monkeypatch.setattr(server, "distill_notes", lambda *a: called.__setitem__("n", called["n"] + 1))
+
+    assert client.delete("/api/profiles/ck-1/notes/0").status_code == 200
+    assert called["n"] == 0
+
+
+def test_delete_profile_note_out_of_range_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    stored = _stored_profile("ck-1", [CandidateNote(note="only", kind="context", source="s")])
+    monkeypatch.setattr(server, "get_profile", lambda key: stored)
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+    assert client.delete("/api/profiles/ck-1/notes/5").status_code == 404
+    assert client.delete("/api/profiles/ck-1/notes/-1").status_code == 404
+
+
+def test_delete_profile_note_unknown_profile_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "get_profile", lambda key: None)
+    assert client.delete("/api/profiles/nope/notes/0").status_code == 404
+
+
 def test_feedback_unknown_run_404() -> None:
     resp = client.post(
         "/api/feedback", data={"run_id": str(uuid.uuid4()), "job_id": "job-q", "text": "x"}
@@ -316,13 +479,69 @@ def test_feedback_run_without_cache_key_400(runs_cleanup: list[str]) -> None:
     assert resp.status_code == 400
 
 
+def test_feedback_on_rejected_job_records_a_false_negative(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """The judge can be wrong in the candidate's favour too.
+
+    "You passed me over but I do fit" is as real a correction as "you said I qualify but
+    I don't", and it is the ONLY way a candidate can supply evidence their resume
+    understated. `outcome` tells the distiller which direction it is recording — without
+    it, a false-negative correction reads exactly like a false-positive one and the
+    distiller would write a dealbreaker that makes future matching strictly worse.
+    """
+    run_id = _post_completed_run(monkeypatch, runs_cleanup)
+    monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("fake-cache-key"))
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+
+    seen: dict[str, Any] = {}
+
+    def _distill(existing: Any, ctx: dict[str, Any], text: str) -> list[CandidateNote]:
+        seen["ctx"] = ctx
+        return [CandidateNote(note="Has production Kubernetes experience", kind="context", source="s")]
+
+    monkeypatch.setattr(server, "distill_notes", _distill)
+
+    # job-r is in `rejected` (status "uncertain" -> excluded from qualified_jobs)
+    resp = client.post(
+        "/api/feedback",
+        data={"run_id": run_id, "job_id": "job-r", "text": "I ran K8s in prod at Acme"},
+    )
+    assert resp.status_code == 200
+    assert seen["ctx"]["outcome"] == "rejected"
+    assert resp.json()["notes"][0]["kind"] == "context"
+
+
+def test_feedback_on_qualified_job_is_marked_as_such(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """The pre-existing direction still reports itself correctly."""
+    run_id = _post_completed_run(monkeypatch, runs_cleanup)
+    monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("fake-cache-key"))
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+
+    seen: dict[str, Any] = {}
+
+    def _distill(existing: Any, ctx: dict[str, Any], text: str) -> list[CandidateNote]:
+        seen["ctx"] = ctx
+        return []
+
+    monkeypatch.setattr(server, "distill_notes", _distill)
+    resp = client.post(
+        "/api/feedback", data={"run_id": run_id, "job_id": "job-q", "text": "no clearance"}
+    )
+    assert resp.status_code == 200
+    assert seen["ctx"]["outcome"] == "qualified"
+
+
 def test_feedback_job_not_among_qualified_404(
     monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
 ) -> None:
     run_id = _post_completed_run(monkeypatch, runs_cleanup)
     monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("fake-cache-key"))
 
-    # job-f is a FAILED job (in `failures`, not `qualified_jobs`) — out of scope by design
+    # job-f is a FAILED job — it broke before/at evaluation, so there is no judgment to
+    # disagree with. Still out of scope now that `rejected` is eligible.
     resp = client.post(
         "/api/feedback", data={"run_id": run_id, "job_id": "job-f", "text": "not a fit"}
     )

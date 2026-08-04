@@ -1,109 +1,149 @@
-# Resume-Driven Job Matching
+# Resume Job Matcher
 
-> README skeleton — filled in by the M_final polish phase. See `PLAN.md` for the
-> mission and `SPEC.md` for the contract.
+Upload your resume and get back only the jobs you actually qualify for.
 
-A web app that takes your resume, finds jobs via Adzuna, extracts each job's full
-description, and shows you **only** the jobs where the description was actually
-extracted and your resume meets the stated requirements (with cited evidence and a
-strict confidence threshold). Orchestrated with LangGraph; semantic work done by
-low-cost open-weight models via OpenRouter (GLM 5.2 for logic, Gemini 3.1 Flash Lite
-for text extraction).
+Most job boards show you everything that matches a keyword. This does the opposite. It
+searches live postings, opens each one, reads the full job description, and compares it
+against your resume. A job only reaches your feed if the description was genuinely
+retrieved and your resume meets what it asks for. Every match comes with the quotes from
+your resume that back it up, so you can see why it thinks you're a fit and disagree if
+you're not.
 
-## Architecture (one line)
+Everything it rules out is still there in an audit panel, with the reasoning, so you can
+tell the difference between "nothing matched" and "something went wrong."
 
-`Next.js (browser)` → `FastAPI` → `LangGraph pipeline` (resume → profile cache →
-Adzuna search → per-job: resolve → fetch → extract JD → parse requirements → judge
-fit) → qualified jobs. See `docs/system-overview.html`.
+## What you can do with it
 
-## Prerequisites
+- **Upload a resume** (PDF, DOCX, or plain text) and run a search.
+- **Reuse a resume** you've already uploaded. Parsing is the slow part, so a saved resume
+  starts searching immediately.
+- **Steer the search.** Choose which locations to cover, whether to include nationwide
+  results, how recent a posting has to be, and whether recruitment agency listings count.
+- **Push back.** If a match is wrong, or a rejection is wrong, say so. Your feedback is
+  distilled into a short list of notes the matcher applies to your next run. You can read
+  that list, add to it, and delete anything you disagree with.
+- **See what it cost.** Each run reports what it spent on model calls, in dollars.
 
-- [**uv**](https://docs.astral.sh/uv/) — Python package manager (fetches Python 3.11 for you)
-- [**bun**](https://bun.com/) — JS package manager + runtime (no separate Node install)
-- An OpenRouter API key, and Adzuna `app_id` + `app_key`
+## Getting started
 
-## Setup
+You'll need:
+
+- [uv](https://docs.astral.sh/uv/) for the Python side. It fetches Python 3.11 for you.
+- [bun](https://bun.com/) for the web side. No separate Node install needed.
+- An [OpenRouter](https://openrouter.ai/) API key, for the models that read resumes and
+  job descriptions.
+- An [Adzuna](https://developer.adzuna.com/) `app_id` and `app_key`, for finding jobs.
+
+### With Docker (simplest)
 
 ```bash
-# API (uv reads pyproject.toml + uv.lock, creates .venv with Python 3.11)
+cp .env.example packages/api/.env     # then fill in your three keys
+docker compose up --build
+```
+
+Open http://localhost:3000.
+
+### Running it directly
+
+```bash
+# API
 cd packages/api
 uv sync
-uv run playwright install chromium    # REQUIRED — JS-render fallback needs it
-# (Linux only) uv run playwright install-deps
-cp ../../.env.example .env             # -> packages/api/.env (config.py loads THIS path); fill in keys
-
-# Web (bun reads package.json + bun.lock)
-cd ../web
-bun install
-echo 'NEXT_PUBLIC_API_BASE=http://localhost:8000' > .env.local
-```
-
-## Run
-
-```bash
-# terminal 1 — API
-cd packages/api
+uv run playwright install chromium     # needed for job pages that render with JavaScript
+# on Linux, also: uv run playwright install-deps
+cp ../../.env.example .env             # config.py reads packages/api/.env specifically
 uv run uvicorn jdparser.server:app --port 8000
 
-# terminal 2 — web
-cd packages/web && bun run dev      # http://localhost:3000
+# web, in a second terminal
+cd packages/web
+bun install
+echo 'NEXT_PUBLIC_API_BASE=http://localhost:8000' > .env.local
+bun run dev
 ```
 
-CLI (dev / verification):
+Open http://localhost:3000.
+
+There's also a command line version, handy for a quick check without the browser:
+
 ```bash
 cd packages/api && uv run python -m jdparser path/to/resume.pdf
 ```
 
-### Docker
+## Your first run
 
-The whole stack runs in containers (API image bundles Playwright + chromium; web
-image builds the Next app). You still need `packages/api/.env` with your keys.
+Upload a resume and give it a few minutes. It's opening and reading real job pages one by
+one, so a run usually takes two to three minutes, and the page updates as it goes.
 
-```bash
-cp .env.example packages/api/.env     # fill in OPENROUTER_API_KEY / ADZUNA_APP_ID / ADZUNA_APP_KEY
-docker compose up --build             # builds both images, starts api:8000 + web:3000
-# open http://localhost:3000
-```
+When it finishes you should see job cards with the company, the title, a link to the real
+posting, and a quote from your resume for each requirement it counted as met. If a job
+card looks wrong, "Not a fit?" tells the matcher why, and it'll remember for next time.
 
-Notes:
-- `packages/api/.env` is passed to the API container via compose `env_file` (it is
-  never baked into the image). After changing a key, recreate the container so it is
-  re-read: `docker compose up -d --force-recreate api`.
-- `NEXT_PUBLIC_API_BASE` is inlined into the browser bundle at **build** time
-  (default `http://localhost:8000`); change the compose `build.args` and rebuild the
-  web image if the browser must reach the API at a different host/port.
-- The resume cache + run records persist in the named volume `jdparser-data`.
-- Tear down with `docker compose down` (add `-v` to also drop the data volume).
+Underneath, the audit panel accounts for everything else: jobs whose description couldn't
+be retrieved, jobs the judge wasn't confident enough about, and jobs filtered out before
+evaluation as being in a different field. Nothing disappears silently.
 
-## Definition of done (how to confirm it works)
+Upload the same resume a second time and it will say it reused your saved profile,
+skipping the slowest step.
 
-1. Open http://localhost:3000 and upload a resume (PDF/DOCX/TXT).
-2. Wait for the run to complete (a run takes ~2–3 min: a fan-out of live job pages
-   are fetched and judged by an LLM; the browser polls every 2s up to a 5-min
-   ceiling). You should see ≥1 **qualified** job card with the company, title, a link
-   to the real job URL, and resume evidence cited for each met requirement.
-3. Upload the **same** resume again — the run reports "loaded your profile from
-   cache" (`resume_cache_hit = true`), skipping the profiler LLM call.
-4. Jobs whose description couldn't be extracted, or that the judge marked uncertain
-   or below the 0.75 confidence threshold, appear only in the **audit/failures**
-   panel — never the main feed.
+## Tuning
 
-## Tuning the LLM nodes
+Each model call is configurable through environment variables, if you want to spend more
+on a better answer or less on a faster one. Set any of
+`LLM_MODEL_<NODE>`, `LLM_TEMP_<NODE>`, `LLM_MAX_TOKENS_<NODE>`, or `LLM_REASONING_<NODE>`,
+where `<NODE>` is one of `PROFILER`, `PLANNER`, `JD_PARSER`, `JUDGE`, `SCREENER`, or
+`FEEDBACK`.
 
-Per-node model, temperature, `max_tokens`, and reasoning are env-overridable (defaults
-are generous; see SPEC §6.3). Override any of `LLM_{MODEL,TEMP,MAX_TOKENS,REASONING}_<NODE>`
-where `<NODE>` ∈ `PROFILER, PLANNER, JD_PARSER, JUDGE`, e.g. `LLM_MAX_TOKENS_JUDGE=14000`
-or `LLM_REASONING_JUDGE=medium`. `max_tokens` is a ceiling billed only as generated, so
-raising it costs nothing unless used.
+For example, `LLM_REASONING_JUDGE=high` makes the fit judge think harder about each job.
+`max_tokens` is a ceiling rather than a reservation, so raising it costs nothing unless
+the extra room actually gets used.
 
-## Gotchas
+Search breadth is tunable too. `SEARCH_PLAN_MAX_QUERIES` controls how many distinct role
+searches it runs, and `SCREEN_EVAL_CAP` caps how many jobs get the expensive full
+evaluation. Both are listed with the rest in `.env.example`.
 
-- **Playwright:** `uv run playwright install chromium` must run after `uv sync`, or
-  JS-rendered job pages fail to fetch.
-- **Tailwind v4** (web) is CSS-first: `@import "tailwindcss";` in `app/globals.css`,
-  no `tailwind.config.js`.
+## Good to know
 
-## MVP limitations (intentional — see SPEC §9)
+A few things work simply on purpose, and are worth knowing before you rely on them:
 
-Single local user (no auth); Adzuna `us` only; JSON flat-file storage (no DB);
-results update by **polling** (no live stream); in-memory graph checkpointer.
+- **It's built for one person on one machine.** There are no accounts or logins, and
+  everything is stored under a single local user.
+- **Your data stays in files on disk.** Resumes, saved profiles, and run history are JSON
+  files under `packages/api/data/`, not a database. Under Docker they live in a volume
+  called `jdparser-data`, and `docker compose down -v` deletes them.
+- **US listings only.** Adzuna supports other countries, but the country is currently
+  fixed.
+- **Results arrive by refreshing, not streaming.** The page checks for progress every two
+  seconds and gives up after five minutes. A run that takes longer than that keeps going
+  on the server; the browser just stops watching.
+- **Saved resumes are never cleaned up automatically.** Delete the files yourself if you
+  want them gone.
+- **Restarting mid-run loses that run.** Progress lives in memory, so a run interrupted by
+  a restart won't resume.
+
+Two setup notes that trip people up:
+
+- `uv run playwright install chromium` has to happen after `uv sync`. Without it, any job
+  page that needs JavaScript fails to load.
+- When running under Docker, `NEXT_PUBLIC_API_BASE` is baked into the browser bundle when
+  the image is built. If the browser needs to reach the API somewhere other than
+  `http://localhost:8000`, change it in `docker-compose.yml` and rebuild the web image.
+  Changing an API key only needs a restart: `docker compose up -d --force-recreate api`.
+
+## How it works
+
+The browser talks to a FastAPI service, which runs a [LangGraph](https://langchain-ai.github.io/langgraph/)
+pipeline: read the resume, build a profile of the candidate, plan searches, query Adzuna,
+drop anything obviously off-field, then for every remaining job resolve its real URL,
+fetch the page, extract the description, pull out the requirements, and judge the fit.
+The final yes or no is plain code, not a model, so the same evidence always produces the
+same answer.
+
+The language work runs on Gemini 3.1 Flash Lite through OpenRouter.
+
+## Digging deeper
+
+- `docs/system-overview.html` is an illustrated walkthrough of the pipeline.
+- `PLAN.md` covers what the project is trying to do, and `SPEC.md` is the detailed
+  contract every component is built against.
+- `docs/IMPLEMENTATION_*.md` explain each area in depth, and every package under
+  `packages/api/jdparser/` has a README describing what lives there.

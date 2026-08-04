@@ -13,7 +13,7 @@ from jdparser.config import (
     FETCH_TIMEOUT_S,
     HTTP_MAX_RETRIES,
     HTTP_USER_AGENT,
-    JD_FETCH_REFERER,
+    HTTP_REFERER,
     MIN_JD_CHARS,
     PLAYWRIGHT_TIMEOUT_MS,
     JDParserError,
@@ -61,7 +61,7 @@ def _render(url: str, *, headless: bool = True) -> tuple[str, int, str]:
         try:
             page = browser.new_page(user_agent=HTTP_USER_AGENT)
             response = page.goto(
-                url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT_MS, referer=JD_FETCH_REFERER
+                url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT_MS, referer=HTTP_REFERER
             )
             status: int = response.status if response is not None else 200
             html: str = page.content()
@@ -87,9 +87,22 @@ def fetch(url: str) -> FetchResult:
        content alone (a genuinely short JD is still a normal 2xx and never
        triggers this — only the quality gate catches that case).
 
-    Raises ``JDParserError(code="FETCH_FAILED")`` if all paths fail (SPEC §6.4).
+       Step 3 needs an X display. In the container that is Xvfb, started by
+       ``entrypoint.sh`` on the ``DISPLAY`` the image ENV advertises — which is why
+       the ENV is set in the Dockerfile and not just exported by the entrypoint:
+       ``docker exec`` inherits the former and never the latter.
+
+       It is nonetheless BEST-EFFORT and cannot fail the fetch. Anywhere there is no
+       display, the launch raises "Missing X server or $DISPLAY"; that used to
+       propagate and surface as ``FETCH_FAILED``, discarding the perfectly usable
+       headless render from step 2 — an *optional* escalation taking out the
+       required path. Now a failed escalation keeps the step-2 result and the job
+       proceeds to extraction on whatever was retrieved.
+
+    Raises ``JDParserError(code="FETCH_FAILED")`` only when step 2 itself fails
+    (SPEC §6.4).
     """
-    headers = {"User-Agent": HTTP_USER_AGENT, "Referer": JD_FETCH_REFERER}
+    headers = {"User-Agent": HTTP_USER_AGENT, "Referer": HTTP_REFERER}
 
     # (1) Static-first via httpx.
     try:
@@ -111,12 +124,18 @@ def fetch(url: str) -> FetchResult:
     except httpx.HTTPError:
         pass  # fall through to Playwright
 
-    # (2) Playwright fallback (renders JS-gated pages).
+    # (2) Playwright fallback (renders JS-gated pages). This one is required.
     try:
         html, status, final_url = _render(url)
-        if status >= 400:
-            # looked blocked/denied, not just thin — one targeted headed retry
-            html, status, final_url = _render(url, headless=False)
-        return FetchResult(url=final_url, status=status, html=html, source="playwright")
     except Exception as exc:  # browser launch / nav / timeout failures
         raise JDParserError(code="FETCH_FAILED", message=str(exc)) from exc
+
+    # (3) Blocked-looking status -> one headed retry. Best-effort: keep the step-2
+    #     result if it can't run (no X display) or fails for any other reason.
+    if status >= 400:
+        try:
+            html, status, final_url = _render(url, headless=False)
+        except Exception:  # reason: an optional escalation must never fail the fetch
+            pass
+
+    return FetchResult(url=final_url, status=status, html=html, source="playwright")

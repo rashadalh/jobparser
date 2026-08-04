@@ -11,32 +11,18 @@ import pytest
 
 from jdparser.cache.store import get_profile, put_profile
 from jdparser.config import PARSER_VERSION, PROFILES_DIR, SCHEMA_VERSION
-from jdparser.llm.schemas import ResumeEvidence, ResumeProfile, StoredResumeProfile
+from builders import stored_profile
+from jdparser.llm.schemas import StoredResumeProfile
 
 
 def _make_record(cache_key: str, created_at: str, updated_at: str) -> StoredResumeProfile:
-    profile = ResumeProfile(
-        roles=["Backend Engineer"],
-        skills=["Python", "Go"],
-        seniority="senior",
-        total_years_experience=8.0,
-        work_periods=[],
-        education=["B.S. Computer Science"],
-        domains=["fintech"],
-        work_authorization=["us_citizen"],
-        locations=["Austin, TX"],
-        remote_preference="remote",
-        employment_types=["full_time"],
-        evidence=[ResumeEvidence(claim="8 years backend", source_quote="8 years building backends")],
-    )
-    return StoredResumeProfile(
+    # PARSER_VERSION/SCHEMA_VERSION (not the builder's pinned literals): these records are
+    # written and read back through the live cache, which keys on the current versions.
+    return stored_profile(
         id=str(uuid.uuid4()),
-        user_id="local",
         cache_key=cache_key,
-        profile=profile,
         parser_version=PARSER_VERSION,
         schema_version=SCHEMA_VERSION,
-        model="z-ai/glm-5.2",
         created_at=created_at,
         updated_at=updated_at,
     )

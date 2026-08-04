@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Resume Job Matcher",
-  description: "Resume-driven job matcher — shows only jobs you qualify for, with cited evidence.",
+  description: "Upload your resume and see only the jobs you actually qualify for, with the evidence behind every match.",
 };
 
 export default function RootLayout({

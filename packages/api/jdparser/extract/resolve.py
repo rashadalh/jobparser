@@ -7,7 +7,7 @@ employer page.
 
 import httpx
 
-from jdparser.config import FETCH_TIMEOUT_S, HTTP_USER_AGENT, JD_FETCH_REFERER, JDParserError
+from jdparser.config import FETCH_TIMEOUT_S, HTTP_USER_AGENT, HTTP_REFERER, JDParserError
 
 
 def resolve_final_url(redirect_url: str) -> str:
@@ -23,7 +23,7 @@ def resolve_final_url(redirect_url: str) -> str:
     if not redirect_url or not redirect_url.strip():
         raise JDParserError(code="RESOLVE_FAILED", message="empty redirect URL")
 
-    headers = {"User-Agent": HTTP_USER_AGENT, "Referer": JD_FETCH_REFERER}
+    headers = {"User-Agent": HTTP_USER_AGENT, "Referer": HTTP_REFERER}
     try:
         with httpx.Client(
             follow_redirects=True, timeout=FETCH_TIMEOUT_S, headers=headers

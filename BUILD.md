@@ -18,7 +18,7 @@ cited evidence; re-upload reports `resume_cache_hit=true` (SPEC §7.4–§7.5).
 2. **No scope creep.** Stay within SPEC §8 out-of-scope. No auth, no DB, no extra
    job sources, no SSE — until after M_final, if ever.
 3. **No new dependencies / no silent upgrades.** Install exactly the pins in
-   `IMPLEMENTATION.md` §Foundations. Different version? It doesn't.
+   `docs/IMPLEMENTATION.md` §Foundations. Different version? It doesn't.
 4. **Type strictness.** `uv run mypy --strict` (api) and `bunx tsc --noEmit` strict
    (web). No `Any`/`# type: ignore`/`any` without a one-line `# reason:` / `// reason:`.
 5. **Errors are typed.** `JDParserError(code=...)` with codes from SPEC §6.4;
@@ -80,7 +80,7 @@ one user-facing flow (Tier 2/3) rather than re-running the sub-agent's Tier-1 ch
 ### Phase 0 — Foundations (single)
 **Inputs:** none.
 **Ownership:** scaffold both packages; write `pyproject.toml` + `package.json` with
-exact pins (IMPLEMENTATION.md §Foundations); `config.py` with **all** SPEC §6
+exact pins (docs/IMPLEMENTATION.md §Foundations); `config.py` with **all** SPEC §6
 constants + `JDParserError`; `.env.example`; empty `data/profiles`, `data/runs`,
 `data/uploads` (with `.gitkeep`); `globals.css`/`postcss.config.mjs` Tailwind v4.
 **Does:** `cd packages/api && uv sync`; `uv run playwright install chromium`;
@@ -94,7 +94,7 @@ installed at the pinned version (`uv pip freeze`, `bun pm ls`).
 
 ### Phase 1 — Cache & resume text (single)
 **Inputs:** Phase 0.
-**Ownership:** `IMPLEMENTATION_CACHE.md` files + `llm/schemas.py` stubs needed
+**Ownership:** `docs/IMPLEMENTATION_CACHE.md` files + `llm/schemas.py` stubs needed
 (`Fingerprint`, `StoredResumeProfile`, `ResumeProfile`). **Locked:** snake_case,
 `cache_key` formula (SPEC §3.8.4).
 **Exit-check (Tier 1+2):** `uv run pytest tests/test_fingerprint.py tests/test_cache_store.py`
@@ -104,7 +104,7 @@ for a PDF/DOCX/TXT fixture and raises the right codes.
 
 ### Phase 2 — LLM agents (single; needs OPENROUTER_API_KEY for the live smoke)
 **Inputs:** Phase 1 (`schemas.py`).
-**Ownership:** `IMPLEMENTATION_LLM.md` files. **Locked:** provider = OpenRouter via
+**Ownership:** `docs/IMPLEMENTATION_LLM.md` files. **Locked:** provider = OpenRouter via
 OpenAI SDK + `instructor` (mode JSON); per-node config from env-overridable
 `config.LLM_NODES` (model/temp/`max_tokens`/reasoning) with generous defaults
 (SPEC §6.3); `AdzunaQuery` `extra="forbid"`; validate-and-retry structured output;
@@ -112,16 +112,16 @@ OpenAI SDK + `instructor` (mode JSON); per-node config from env-overridable
 **Exit-check (Tier 1+2):** `uv run pytest tests/test_llm_schemas.py` green;
 `uv run mypy --strict` clean; a config test confirms `LLM_MAX_TOKENS_JUDGE=123` env override flows into
 `LLM_NODES["judge"]["max_tokens"]`; **live smoke** (orchestrator, gated on key):
-`profile_resume(sample)` (GLM) → valid `ResumeProfile` with ≥1 evidence;
+`profile_resume(sample)` (Gemini Flash Lite) → valid `ResumeProfile` with ≥1 evidence;
 `parse_jd_requirements(sample)` (Gemini Flash Lite) → valid `JobRequirements`;
-`judge_fit(...)` (GLM) → valid `FitJudgment`.
+`judge_fit(...)` (Gemini Flash Lite) → valid `FitJudgment`.
 **Commit:** "Phase 2: OpenRouter LLM agents + schemas".
 
 ### Phase 3 — Adzuna + Phase 4 — Extraction (parallel-2 then integration)
 **Inputs:** Phase 1 (`schemas.py`). Independent file sets → run in parallel.
-- **Agent A (Adzuna):** `IMPLEMENTATION_ADZUNA.md` files. Owns `adzuna/*`,
+- **Agent A (Adzuna):** `docs/IMPLEMENTATION_ADZUNA.md` files. Owns `adzuna/*`,
   `tests/test_dedupe.py`. Forbid edits to `extract/`.
-- **Agent B (Extraction):** `IMPLEMENTATION_EXTRACT.md` files. Owns `extract/*`,
+- **Agent B (Extraction):** `docs/IMPLEMENTATION_EXTRACT.md` files. Owns `extract/*`,
   `tests/test_extract.py`, `tests/test_quality.py`. Forbid edits to `adzuna/`.
 **Exit-check (Tier 1+2):** both suites green; `dedupe` collapses dupes; `extract_jd_text`
 picks JSON-LD→ATS→readable in order on fixtures; `check_quality` enforces
@@ -132,7 +132,7 @@ JS listing (Tier-2 manual, documented).
 
 ### Phase 5 — Graph (single)
 **Inputs:** Phases 2,3,4.
-**Ownership:** `IMPLEMENTATION_GRAPH.md` files. **Locked:** `Send` fan-out, reducer
+**Ownership:** `docs/IMPLEMENTATION_GRAPH.md` files. **Locked:** `Send` fan-out, reducer
 lifecycle (SPEC §3.10), `profile` injection into each `Send` payload (SPEC §3.2),
 `is_qualified`
 verbatim (SPEC §7), `max_concurrency=EVAL_FANOUT_CONCURRENCY`.
@@ -158,7 +158,7 @@ Orchestrator runs `uv run python -m jdparser tests/fixtures/sample_resume.pdf` a
 
 ### Phase 6 — API (single)
 **Inputs:** Phase 5.
-**Ownership:** `IMPLEMENTATION_API.md` files. **Locked:** pull-only polling, run-record
+**Ownership:** `docs/IMPLEMENTATION_API.md` files. **Locked:** pull-only polling, run-record
 lifecycle (SPEC §3.10), partitioning of evaluated jobs into
 qualified/failures/rejected, never-stuck-running guard.
 **Exit-check (Tier 2):** `uv run pytest tests/test_api.py` green (graph faked): POST→202,
@@ -170,7 +170,7 @@ background drives to `completed`, GET returns partitioned `RunRecord`; unknown i
 
 ### Phase 7 — Web (single)
 **Inputs:** Phase 6.
-**Ownership:** `IMPLEMENTATION_WEB.md` files. **Locked:** snake_case types, Tailwind
+**Ownership:** `docs/IMPLEMENTATION_WEB.md` files. **Locked:** snake_case types, Tailwind
 v4, `mounted`-gating, cited-evidence JobCard, FailuresPanel discloses MVP stubs.
 **Exit-check (Tier 1+3):** `bun run build` + `bunx tsc --noEmit` clean. Orchestrator Tier-3
 (real browser via the available browser tooling): with api+web running, upload
@@ -191,7 +191,7 @@ SPEC §7.4 cache-hit re-run, reproduced by the orchestrator end-to-end.
 ## Sub-agent dispatch rules
 
 Each sub-agent prompt MUST include: (1) the exact section refs (e.g. "implement per
-IMPLEMENTATION_EXTRACT.md §fetch.py + SPEC §3.8.2"); (2) **files owned** + files it
+docs/IMPLEMENTATION_EXTRACT.md §fetch.py + SPEC §3.8.2"); (2) **files owned** + files it
 must NOT touch; (3) pre-existing on-disk surface to import (schemas, config
 constants) rather than redefine; (4) the relevant Hard Rules subset; (5) locked
 decisions for the phase; (6) env gotchas (Playwright/Tailwind/Python 3.11);
@@ -218,7 +218,7 @@ sub-agent's self-report alone — independently reproduce one flow (trust-but-ve
 - [ ] Re-upload same resume → run reports `resume_cache_hit=true`, no profiler call.
 - [ ] A thin/blocked JD → job absent from feed, present in FailuresPanel with stage.
 - [ ] `uncertain`/sub-0.75 jobs absent from feed, present in rejected/audit.
-- [ ] Pins match `IMPLEMENTATION.md` (`uv pip freeze`/`bun pm ls`); Playwright chromium installed.
+- [ ] Pins match `docs/IMPLEMENTATION.md` (`uv pip freeze`/`bun pm ls`); Playwright chromium installed.
 - [ ] README documents env + the two gotchas + definition-of-done steps.
 
 ## Final report format

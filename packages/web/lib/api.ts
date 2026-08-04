@@ -92,3 +92,42 @@ export async function submitFeedback(
   }
   return (await r.json()).notes;
 }
+
+// Add feedback about YOURSELF rather than about a specific job ("I won't relocate").
+// Returns the full re-distilled note list, not just the new note.
+export async function addProfileNote(
+  cacheKey: string,
+  text: string,
+): Promise<CandidateNote[]> {
+  const fd = new FormData();
+  fd.append("text", text);
+  const r = await fetch(`${BASE}/api/profiles/${cacheKey}/notes`, {
+    method: "POST",
+    body: fd,
+  });
+  if (!r.ok) {
+    let detail = `saving feedback failed: ${r.status}`;
+    try {
+      const j = await r.json();
+      if (j?.detail) detail = j.detail;
+    } catch {
+      /* keep the status-based message */
+    }
+    throw new Error(detail);
+  }
+  return (await r.json()).notes;
+}
+
+// Remove one note by its index in the STORED list (not the panel's display order).
+// Returns the remaining notes; deletion is deterministic, with no re-distillation.
+export async function deleteProfileNote(
+  cacheKey: string,
+  storedIndex: number,
+): Promise<{ notes: CandidateNote[]; deleted: string }> {
+  const r = await fetch(
+    `${BASE}/api/profiles/${cacheKey}/notes/${storedIndex}`,
+    { method: "DELETE" },
+  );
+  if (!r.ok) throw new Error(`removing the note failed: ${r.status}`);
+  return r.json();
+}

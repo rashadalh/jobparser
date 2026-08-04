@@ -38,6 +38,7 @@ from jdparser.graph.state import JobMatchState, initial_state
 from jdparser.llm.feedback import distill_notes
 from jdparser.llm.resume_profiler import profile_resume
 from jdparser.llm.schemas import RunRecord, StoredResumeProfile
+from jdparser.llm.usage import start_run_usage
 from jdparser.resume.extract_text import extract_text
 from jdparser.runs.store import create_run, get_run, list_runs, update_run
 
@@ -77,7 +78,7 @@ _PHASE_LABELS = {
     "extract_resume_text": "Reading your resume",
     "load_or_parse_profile": "Understanding your background",
     "plan_searches": "Planning job searches",
-    "run_adzuna_search": "Searching job boards",
+    "search_jobs": "Searching job boards",
     "screen_jobs": "Evaluating jobs against your resume",  # eval fan-out follows immediately
     "aggregate_matches": "Compiling your matches",
 }
@@ -137,6 +138,9 @@ def _execute(
     ``except`` is mandatory so a run is never left stuck ``running``.
     """
     update_run(run_id, status="running")
+    # Accounting for THIS run. A ContextVar, so concurrent background runs don't pool
+    # their spend together; it reaches the fan-out worker threads too.
+    usage = start_run_usage()
     init = initial_state(
         run_id,
         resume_file_path=resume_path,
@@ -181,11 +185,13 @@ def _execute(
             rejected=rejected,
             errors=final["errors"],
             screened_out=final.get("screened_out", []),
+            usage=usage.as_dict(),
         )
     except JDParserError as e:
-        update_run(run_id, status="failed", error=f"{e.code}: {e.message}")
+        # record spend on failures too — a run that died at the judge still cost money
+        update_run(run_id, status="failed", error=f"{e.code}: {e.message}", usage=usage.as_dict())
     except Exception as e:  # reason: never leave a run stuck in "running"
-        update_run(run_id, status="failed", error=str(e))
+        update_run(run_id, status="failed", error=str(e), usage=usage.as_dict())
 
 
 @app.get("/api/health")
@@ -300,6 +306,10 @@ def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summari
             "roles": p.profile.roles[:3],
             "education": p.profile.education[:1],
             "locations": p.profile.locations,  # inferred preferred locations (editable pre-fill)
+            # The distilled feedback list. Carried on the summary rather than behind a
+            # per-profile fetch: distill_notes keeps it deliberately small, so shipping it
+            # with the picker costs less than the extra round-trip and loading state.
+            "notes": [n.model_dump() for n in p.notes],
         }
         for p in list_profiles()
         if p.parser_version == PARSER_VERSION and p.schema_version == SCHEMA_VERSION
@@ -333,18 +343,71 @@ def read_run(run_id: str) -> RunRecord:
     return rec
 
 
+@app.post("/api/profiles/{cache_key}/notes")
+def add_profile_note(cache_key: str, text: str = Form(...)) -> dict[str, Any]:
+    """Add feedback about the CANDIDATE rather than about a specific job.
+
+    ``POST /api/feedback`` only accepts corrections attached to a job the judge got
+    wrong. Plenty of what a candidate needs to say has no job to hang it on ("I won't
+    relocate", "the 2019 gap was contract work"), and before this there was nowhere to
+    put it. Same distillation, same note list, no ``job_context``.
+
+    Applies to the candidate's NEXT run; nothing already evaluated is re-judged.
+    """
+    stored = get_profile(cache_key)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="profile not found")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="feedback text is empty")
+    try:
+        notes = distill_notes(stored.notes, None, text.strip())
+    except JDParserError as e:
+        raise HTTPException(status_code=400, detail=f"{e.code}: {e.message}")
+    put_profile(stored.model_copy(update={"notes": notes, "updated_at": now_iso()}))
+    return {"notes": [n.model_dump() for n in notes]}
+
+
+@app.delete("/api/profiles/{cache_key}/notes/{index}")
+def delete_profile_note(cache_key: str, index: int) -> dict[str, Any]:
+    """Remove one note by its position in the STORED list.
+
+    Deliberately does NOT re-distill: deletion is the user overruling the model, so
+    running the list back through the LLM could reword the survivors or argue the note
+    back in. Drop it and save, nothing else.
+
+    ``index`` is the index in ``stored.notes``, NOT in whatever order the UI displays
+    (the panel sorts dealbreakers first). Returns the remaining list plus the deleted
+    text, so a client that somehow sent a stale index can see what actually went.
+    """
+    stored = get_profile(cache_key)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="profile not found")
+    if not 0 <= index < len(stored.notes):
+        raise HTTPException(status_code=404, detail="note not found")
+    deleted = stored.notes[index]
+    remaining = [n for i, n in enumerate(stored.notes) if i != index]
+    put_profile(stored.model_copy(update={"notes": remaining, "updated_at": now_iso()}))
+    return {"notes": [n.model_dump() for n in remaining], "deleted": deleted.note}
+
+
 @app.post("/api/feedback")
 def submit_feedback(
     run_id: str = Form(...),
     job_id: str = Form(...),
     text: str = Form(...),
 ) -> dict[str, Any]:
-    """Capture user feedback on a QUALIFIED job as a candidate note (keyed by the
-    resume's ``cache_key``), distilled into the candidate's existing note list.
+    """Capture user feedback on a JUDGED job as a candidate note (keyed by the resume's
+    ``cache_key``), distilled into the candidate's existing note list.
 
-    Only qualified jobs are eligible (the false-positive case this feature targets —
-    a rejected/failed job has no "wrongly told me I qualify" to correct). Applies to
-    the candidate's NEXT run only; jobs already evaluated are never re-judged.
+    Works in both directions, because the judge can be wrong either way:
+      - a **qualified** job -> a false positive ("you said I qualify, but I don't"),
+      - a **rejected** job  -> a false negative ("you passed me over, but I do fit").
+    The distiller is told which via ``outcome``; a false negative usually SUPPLIES
+    evidence the resume understated, rather than adding a constraint.
+
+    ``failures`` are deliberately not eligible: a job that broke at fetch/parse has no
+    judgment to disagree with. Applies to the candidate's NEXT run only; jobs already
+    evaluated are never re-judged.
     """
     run = get_run(run_id)
     if run is None:
@@ -354,13 +417,21 @@ def submit_feedback(
     stored = get_profile(run.resume_cache_key)
     if stored is None:
         raise HTTPException(status_code=404, detail="candidate profile not found")
+
+    outcome = "qualified"
     job = next((j for j in run.qualified_jobs if j.get("job_id") == job_id), None)
     if job is None:
-        raise HTTPException(status_code=404, detail="job not found among this run's qualified jobs")
+        outcome = "rejected"
+        job = next((j for j in run.rejected if j.get("job_id") == job_id), None)
+    if job is None:
+        raise HTTPException(
+            status_code=404, detail="job not found among this run's judged jobs"
+        )
     job_context = {
         "title": job.get("title"),
         "requirements": job.get("requirements"),
         "rationale": (job.get("judgment") or {}).get("rationale"),
+        "outcome": outcome,  # which way the judge went -> which correction this is
     }
     try:
         notes = distill_notes(stored.notes, job_context, text)

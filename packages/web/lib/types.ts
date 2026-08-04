@@ -43,14 +43,22 @@ export interface ResumeProfile {
   remote_preference: string; employment_types: string[];
   evidence: ResumeEvidence[];
 }
+// Mirrors jdparser/llm/schemas.py StoredResumeProfile. Hand-maintained (no codegen):
+// keep it complete — a partial mirror types the frontend against a lie, because the
+// missing fields DO arrive on the wire and TypeScript denies they exist.
 export interface StoredResumeProfile {
-  id: string; cache_key: string; profile: ResumeProfile;
+  id: string; user_id: string; cache_key: string; profile: ResumeProfile;
+  parser_version: string; schema_version: string;
   model: string; created_at: string; updated_at: string;
+  notes: CandidateNote[];
 }
 export interface ProfileSummary {
   cache_key: string; id: string; created_at: string; updated_at: string;
   model: string; seniority: string; roles: string[]; education: string[];
   locations: string[];
+  // The distilled feedback list for this candidate. Already a summary: the server
+  // merges each new piece of feedback into it rather than appending, so it stays small.
+  notes: CandidateNote[];
 }
 export interface RunSummary {
   run_id: string; status: RunStatus; created_at: string; updated_at: string;
@@ -64,6 +72,12 @@ export interface ScreenedJob {
   // (recruitment-agency listing, not opted in). Older runs omit it.
   reason?: "off_field" | "over_cap" | "agency";
 }
+export interface LlmUsage {
+  calls: number; prompt_tokens: number; completion_tokens: number;
+  cost_usd: number;
+  // false when a call came back without a cost figure, making cost_usd a floor
+  cost_complete: boolean;
+}
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface RunRecord {
   run_id: string; user_id: string; status: RunStatus;
@@ -75,4 +89,6 @@ export interface RunRecord {
   qualified_jobs: EvaluatedJob[]; failures: EvaluatedJob[];
   rejected: EvaluatedJob[]; errors: ErrorRecord[];
   screened_out: ScreenedJob[]; error: string | null;
+  // null on runs from before cost tracking, and on runs that died before any LLM call
+  usage: LlmUsage | null;
 }

@@ -41,40 +41,39 @@ def load_or_parse_profile(state):
     existing = get_profile(key)                         # cache/store.py
     if existing is not None:
         return {"resume_profile": existing.profile.model_dump(),
-                "resume_profile_id": existing.id,
                 "resume_cache_hit": True}
-    profile = profile_resume(state["resume_text"])      # llm/resume_profiler.py (GLM 5.2)
+    profile = profile_resume(state["resume_text"])      # llm/resume_profiler.py (Gemini 3.1 Flash Lite)
     # recompute the full fingerprint here on miss (state only carries cache_key)
     fp = compute_fingerprint(state["resume_file_path"], state["resume_text"])
     rec = StoredResumeProfile(
         id=str(uuid4()), user_id=state["user_id"],
-        file_hash=fp.file_hash, text_hash=fp.text_hash, cache_key=key,
+        cache_key=key,
         profile=profile, parser_version=PARSER_VERSION, schema_version=SCHEMA_VERSION,
-        model=MODEL_GLM, created_at=now_iso(), updated_at=now_iso())   # profiler slug (§6.3)
+        model=MODEL_LOGIC, created_at=now_iso(), updated_at=now_iso())   # profiler slug (§6.3)
     put_profile(rec)                                    # atomic write
     return {"resume_profile": profile.model_dump(),
-            "resume_profile_id": rec.id, "resume_cache_hit": False}
+            "resume_cache_hit": False}
 
 def plan_searches(state):
     profile = ResumeProfile.model_validate(state["resume_profile"])
-    plan = plan_adzuna_queries(profile)                 # llm/search_planner.py (GLM 5.2)
+    plan = plan_queries(profile)                 # llm/search_planner.py (Gemini 3.1 Flash Lite)
     if not plan:
         raise JDParserError(code="PLAN_EMPTY", message="planner produced no queries")
     return {"search_plan": [q.model_dump() for q in plan]}
 
-def run_adzuna_search(state):
+def search_jobs(state):
     queries = [AdzunaQuery.model_validate(q) for q in state["search_plan"]]
     results, errors = [], []
     for q in queries:                                   # continue-on-partial-failure (policy lives here)
         try:
-            results.extend(run_search_plan([q]))        # adzuna/client.py
+            results.extend(run_search_plan([q]))        # jobsource/adzuna/client.py
         except JDParserError as e:
-            errors.append(ErrorRecord(job_id=None, stage="adzuna_search",
+            errors.append(ErrorRecord(job_id=None, stage="job_search",
                                       code=e.code, message=e.message).model_dump())
-    return {"adzuna_results": results, "errors": errors}
+    return {"job_results": results, "errors": errors}
 
 def dedupe_jobs(state):
-    return {"deduped_jobs": dedupe(state["adzuna_results"])}    # adzuna/dedupe.py
+    return {"deduped_jobs": dedupe(state["job_results"])}    # jobsource/dedupe.py
 
 def evaluate_jobs(state) -> list[Send]:                 # conditional edge fn, fan-out
     # inject the profile into each worker payload (SPEC §3.2, §4.1)
@@ -97,7 +96,7 @@ constants live in `config.py`.
 Failure policy at top level: `extract_resume_text`, `fingerprint_resume`,
 `load_or_parse_profile`, `plan_searches` are **fatal** (raise → run fails). Their
 exceptions are caught by the API runner (IMPLEMENTATION_API) which records the run
-as `failed`. `run_adzuna_search` is partial-tolerant (above). The fan-out is fully
+as `failed`. `search_jobs` is partial-tolerant (above). The fan-out is fully
 fault-isolated (per-worker, below).
 
 ## `subgraph.py` — job-evaluation subgraph (SPEC §4.3)
@@ -142,7 +141,7 @@ def judge_fit_node(s):
     try:
         profile = ResumeProfile.model_validate(s["profile"])    # injected via Send (SPEC §3.2)
         req = JobRequirements.model_validate(s["requirements"])
-        j = judge_fit(profile, req)                      # GLM 5.2
+        j = judge_fit(profile, req)                      # Gemini 3.1 Flash Lite
         return {"judgment": j.model_dump()}
     except JDParserError as e:
         return {"result": [_fail(s, "judge", e)]}
@@ -205,7 +204,7 @@ def build_graph():
     g.add_node("fingerprint_resume", fingerprint_resume)
     g.add_node("load_or_parse_profile", load_or_parse_profile)
     g.add_node("plan_searches", plan_searches)
-    g.add_node("run_adzuna_search", run_adzuna_search)
+    g.add_node("search_jobs", search_jobs)
     g.add_node("dedupe_jobs", dedupe_jobs)
     g.add_node("job_eval", sub)            # subgraph as a node (Send targets it)
     g.add_node("aggregate_matches", aggregate_matches)
@@ -213,8 +212,8 @@ def build_graph():
     g.add_edge("extract_resume_text", "fingerprint_resume")
     g.add_edge("fingerprint_resume", "load_or_parse_profile")
     g.add_edge("load_or_parse_profile", "plan_searches")
-    g.add_edge("plan_searches", "run_adzuna_search")
-    g.add_edge("run_adzuna_search", "dedupe_jobs")
+    g.add_edge("plan_searches", "search_jobs")
+    g.add_edge("search_jobs", "dedupe_jobs")
     g.add_conditional_edges("dedupe_jobs", evaluate_jobs, ["job_eval"])  # fan-out
     g.add_edge("job_eval", "aggregate_matches")        # join (LangGraph waits for all Sends)
     g.add_edge("aggregate_matches", END)
@@ -250,3 +249,11 @@ The CLI is a dev/verification convenience and the Tier-2 harness; the browser fl
 - `uv run python -m jdparser tests/fixtures/sample_resume.pdf` runs end-to-end against live
   Adzuna + OpenRouter (orchestrator's M5 Tier-2 check) and prints ≥0 qualified jobs with
   no unhandled exception; a second run prints `cache_hit=true`.
+
+## Why `nodes.py` is not split
+
+At ~325 lines it holds the nine graph nodes plus the location-override algorithm plus
+`is_qualified`. A split was evaluated during the refactor audit and **declined** for the
+same reasons as `server.py`: cohesive around one pipeline, under the size threshold, and
+cited by name across the spec. Revisit past ~500 lines. See
+[`REFACTOR_AUDIT.md`](REFACTOR_AUDIT.md) F16.

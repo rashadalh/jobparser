@@ -5,6 +5,14 @@ import type {
   ScreenedJob,
 } from "@/lib/types";
 import Pills from "@/components/Pills";
+import FeedbackForm from "@/components/FeedbackForm";
+
+// The judge's decision values are snake_case enums; never show them to a person as-is.
+const DECISION_LABEL: Record<string, string> = {
+  qualified: "a match",
+  not_qualified: "not a match",
+  uncertain: "unclear",
+};
 
 // Plain-language explanation of each pipeline stage a job can fail at.
 const STAGE_EXPLAINER: Record<string, string> = {
@@ -54,8 +62,50 @@ function ParsedRequirements({ req }: { req: JobRequirements | null }) {
   );
 }
 
-/** A rejected job — the judge DID evaluate it; show its full reasoning. */
-function RejectedItem({ job }: { job: EvaluatedJob }) {
+/** One bucket of jobs that never reached evaluation, with why. */
+function ScreenedSection({
+  title,
+  explainer,
+  jobs,
+}: {
+  title: string;
+  explainer: string;
+  jobs: ScreenedJob[];
+  /** Renders nothing when empty EXCEPT where a caller wants the "None" state — see
+   *  `alwaysShow` at the call site for off-field, the one bucket that reports zero. */
+}) {
+  return (
+    <section className="mt-4">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        {title} ({jobs.length})
+      </h4>
+      <p className="mt-0.5 text-xs text-gray-400">{explainer}</p>
+      {jobs.length === 0 ? (
+        <p className="mt-1 text-sm text-gray-400">None</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {jobs.map((s) => (
+            <li key={s.job_id} className="text-sm text-gray-700">
+              <span className="font-medium text-gray-900">{s.title}</span>
+              {s.company ? ` · ${s.company}` : ""}
+              {s.location ? (
+                <span className="text-gray-500"> · {s.location}</span>
+              ) : (
+                ""
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** A rejected job — the judge DID evaluate it; show its full reasoning, and let the
+ *  candidate push back on it. A rejection is a judgment call over an imperfect resume
+ *  summary, so it can be wrong in the candidate's favour just as a match can be wrong
+ *  against them; `runId` is threaded down purely to make that possible. */
+function RejectedItem({ job, runId }: { job: EvaluatedJob; runId: string }) {
   const j = job.judgment;
   return (
     <details
@@ -65,9 +115,9 @@ function RejectedItem({ job }: { job: EvaluatedJob }) {
       <summary className="cursor-pointer text-sm text-gray-700">
         <span className="font-medium text-gray-900">{job.title}</span>
         {job.company ? ` · ${job.company}` : ""}
-        {" — "}
+        {" · "}
         <span className="text-gray-500">
-          {j?.decision ?? "—"}
+          {j ? DECISION_LABEL[j.decision] ?? j.decision : "no decision"}
           {j ? ` (${Math.round(j.confidence * 100)}% confidence)` : ""}
         </span>
       </summary>
@@ -77,7 +127,7 @@ function RejectedItem({ job }: { job: EvaluatedJob }) {
           <>
             <div>
               <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Why this was {j.decision}
+                Why we ruled it {DECISION_LABEL[j.decision] ?? j.decision}
               </span>
               <p
                 data-testid="reasoning"
@@ -119,6 +169,17 @@ function RejectedItem({ job }: { job: EvaluatedJob }) {
         <div className="mt-3">
           <JobLink url={job.final_url} />
         </div>
+
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <FeedbackForm
+            runId={runId}
+            jobId={job.job_id}
+            openLabel="Disagree with this?"
+            prompt="Why do you think you're a fit for this job?"
+            placeholder="e.g. I led Kubernetes migrations at Acme, but my resume only lists Docker"
+            doneText="Thanks. Your next run for this resume will take this into account."
+          />
+        </div>
       </div>
     </details>
   );
@@ -141,7 +202,7 @@ function FailedItem({
       <summary className="cursor-pointer text-sm text-gray-700">
         <span className="font-medium text-gray-900">{job.title}</span>
         {job.company ? ` · ${job.company}` : ""}
-        {" — "}
+        {" · "}
         <span className="text-gray-500">failed at {stage}</span>
       </summary>
 
@@ -154,7 +215,7 @@ function FailedItem({
           <p className="text-sm text-gray-700">
             <span className="font-mono text-xs text-gray-500">{error.code}</span>
             {error.message && error.message !== error.code
-              ? ` — ${error.message}`
+              ? `: ${error.message}`
               : ""}
           </p>
         )}
@@ -174,11 +235,13 @@ export default function FailuresPanel({
   rejected,
   errors,
   screened,
+  runId,
 }: {
   failures: EvaluatedJob[];
   rejected: EvaluatedJob[];
   errors: ErrorRecord[];
   screened: ScreenedJob[];
+  runId: string;
 }) {
   // Correlate a failed job with its per-job ErrorRecord (code + message) by job_id.
   const errByJob = new Map<string, ErrorRecord>();
@@ -198,13 +261,14 @@ export default function FailuresPanel({
       className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
     >
       <summary className="cursor-pointer text-sm font-medium text-gray-700">
-        Audit — {failures.length} failed · {rejected.length} rejected ·{" "}
+        Audit: {failures.length} failed · {rejected.length} rejected ·{" "}
         {errors.length} errors · {screened.length} filtered
       </summary>
 
       <p className="mt-3 text-xs text-gray-500">
-        Results update by polling (no live stream); single local profile. Click any
-        row below to see the model&apos;s reasoning.
+        Results refresh as we check for them rather than streaming live, and everything
+        is saved under a single local profile. Click any row to see the model&apos;s
+        reasoning.
       </p>
 
       <section className="mt-4">
@@ -217,7 +281,7 @@ export default function FailuresPanel({
           <ul className="mt-2 space-y-2">
             {rejected.map((r) => (
               <li key={r.job_id}>
-                <RejectedItem job={r} />
+                <RejectedItem job={r} runId={runId} />
               </li>
             ))}
           </ul>
@@ -241,83 +305,28 @@ export default function FailuresPanel({
         )}
       </section>
 
-      <section className="mt-4">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Filtered as off-field ({offField.length})
-        </h4>
-        <p className="mt-0.5 text-xs text-gray-400">
-          Dropped before evaluation as not in your field (a keyword match in an
-          unrelated industry/role), to keep the feed and cost focused.
-        </p>
-        {offField.length === 0 ? (
-          <p className="mt-1 text-sm text-gray-400">None</p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {offField.map((s) => (
-              <li key={s.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{s.title}</span>
-                {s.company ? ` · ${s.company}` : ""}
-                {s.location ? (
-                  <span className="text-gray-500"> · {s.location}</span>
-                ) : (
-                  ""
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* off-field always renders (its "None" is meaningful: nothing was dropped);
+          the other two appear only when non-empty, as before. */}
+      <ScreenedSection
+        title="Not in your field"
+        explainer="These matched on a keyword but sit in a different industry or role, so we skipped them before evaluating anything."
+        jobs={offField}
+      />
 
       {overCap.length > 0 && (
-        <section className="mt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            In-field, not evaluated ({overCap.length})
-          </h4>
-          <p className="mt-0.5 text-xs text-gray-400">
-            Relevant to your field but past this run&apos;s evaluation budget (the
-            top matches were evaluated first). Re-run or narrow the search to reach
-            these.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {overCap.map((s) => (
-              <li key={s.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{s.title}</span>
-                {s.company ? ` · ${s.company}` : ""}
-                {s.location ? (
-                  <span className="text-gray-500"> · {s.location}</span>
-                ) : (
-                  ""
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ScreenedSection
+          title="In your field, but not evaluated"
+          explainer="These are relevant, but the run hit its evaluation limit and the strongest matches went first. Run it again or narrow your search to reach them."
+          jobs={overCap}
+        />
       )}
 
       {agency.length > 0 && (
-        <section className="mt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Recruitment agencies, not evaluated ({agency.length})
-          </h4>
-          <p className="mt-0.5 text-xs text-gray-400">
-            In-field but screened out as third-party recruiter/staffing listings. Check
-            &ldquo;Include recruitment agencies&rdquo; in the search panel and re-run to
-            evaluate these.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {agency.map((s) => (
-              <li key={s.job_id} className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{s.title}</span>
-                {s.company ? ` · ${s.company}` : ""}
-                {s.location ? (
-                  <span className="text-gray-500"> · {s.location}</span>
-                ) : (
-                  ""
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ScreenedSection
+          title="Recruitment agencies, not evaluated"
+          explainer="These are in your field but look like recruiter or staffing listings rather than the employer hiring directly. Check “Include recruitment agencies” in the search panel and run again to have them evaluated."
+          jobs={agency}
+        />
       )}
 
       <section className="mt-4">
@@ -333,7 +342,7 @@ export default function FailuresPanel({
                 <span className="font-mono text-xs text-gray-500">
                   {e.stage}/{e.code}
                 </span>
-                {e.message ? ` — ${e.message}` : ""}
+                {e.message ? `: ${e.message}` : ""}
                 {e.job_id ? (
                   <span className="text-xs text-gray-400"> (job {e.job_id})</span>
                 ) : (

@@ -1,31 +1,10 @@
-"use client";
-
-import { useState } from "react";
 import type { EvaluatedJob } from "@/lib/types";
-import { submitFeedback } from "@/lib/api";
+import FeedbackForm from "@/components/FeedbackForm";
 
 export default function JobCard({ job, runId }: { job: EvaluatedJob; runId: string }) {
   const j = job.judgment;
   const confidencePct = j ? Math.round(j.confidence * 100) : null;
   const isAgency = job.is_recruitment_agency === true;
-
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [state, setState] = useState<"idle" | "submitting" | "done" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmitFeedback() {
-    if (!text.trim()) return;
-    setState("submitting");
-    setError(null);
-    try {
-      await submitFeedback(runId, job.job_id, text.trim());
-      setState("done");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to submit feedback");
-      setState("error");
-    }
-  }
 
   return (
     <article
@@ -39,7 +18,7 @@ export default function JobCard({ job, runId }: { job: EvaluatedJob; runId: stri
             {isAgency && (
               <span
                 data-testid="agency-badge"
-                title="This posting appears to be from a third-party recruitment/staffing agency, not the direct employer."
+                title="This looks like a listing from a recruitment agency rather than the employer hiring directly."
                 className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-xs font-medium text-amber-800"
               >
                 Agency
@@ -110,55 +89,14 @@ export default function JobCard({ job, runId }: { job: EvaluatedJob; runId: stri
       )}
 
       <div className="mt-4 border-t border-gray-100 pt-3">
-        {state === "done" ? (
-          <p className="text-sm text-gray-600">
-            Noted — this will inform your next run for this resume.
-          </p>
-        ) : open ? (
-          <div className="space-y-2">
-            <label htmlFor={`feedback-${job.job_id}`} className="text-xs font-medium text-gray-600">
-              What&apos;s wrong with this match?
-            </label>
-            <textarea
-              id={`feedback-${job.job_id}`}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              disabled={state === "submitting"}
-              rows={2}
-              placeholder="e.g. I don't have an active clearance"
-              className="w-full rounded-md border border-gray-300 p-2 text-sm text-gray-800 disabled:opacity-50"
-            />
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={state === "submitting" || !text.trim()}
-                onClick={handleSubmitFeedback}
-                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {state === "submitting" ? "Submitting…" : "Submit"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  setError(null);
-                }}
-                className="rounded-md px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-            </div>
-            {state === "error" && error && <p className="text-xs text-red-600">{error}</p>}
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="text-xs font-medium text-gray-500 hover:text-gray-700"
-          >
-            Not a fit?
-          </button>
-        )}
+        <FeedbackForm
+          runId={runId}
+          jobId={job.job_id}
+          openLabel="Not a fit?"
+          prompt="What's wrong with this match?"
+          placeholder="e.g. I don't have an active clearance"
+          doneText="Thanks. We&apos;ll take this into account the next time you run this resume."
+        />
       </div>
     </article>
   );

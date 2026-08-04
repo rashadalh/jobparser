@@ -16,7 +16,7 @@ Pipeline (see `PLAN.md` for prose, `docs/system-overview.html` for the diagram):
 
 ```
 upload ─▶ extract_resume_text ─▶ fingerprint_resume ─▶ load_or_parse_profile
-        ─▶ plan_searches ─▶ run_adzuna_search ─▶ dedupe_jobs
+        ─▶ plan_searches ─▶ search_jobs ─▶ dedupe_jobs
         ─▶ evaluate_jobs (fan-out N workers) ─▶ aggregate_matches ─▶ results
 ```
 
@@ -42,10 +42,10 @@ Every file an agent may create appears here.
 
 ```
 jdparser/
-├── PLAN.md  SPEC.md  IMPLEMENTATION.md  BUILD.md  README.md
-├── IMPLEMENTATION_GRAPH.md  IMPLEMENTATION_LLM.md  IMPLEMENTATION_ADZUNA.md
-├── IMPLEMENTATION_EXTRACT.md  IMPLEMENTATION_CACHE.md  IMPLEMENTATION_API.md
-├── IMPLEMENTATION_WEB.md
+├── PLAN.md  SPEC.md  docs/IMPLEMENTATION.md  BUILD.md  README.md
+├── docs/IMPLEMENTATION_GRAPH.md  docs/IMPLEMENTATION_LLM.md  docs/IMPLEMENTATION_ADZUNA.md
+├── docs/IMPLEMENTATION_EXTRACT.md  docs/IMPLEMENTATION_CACHE.md  docs/IMPLEMENTATION_API.md
+├── docs/IMPLEMENTATION_WEB.md
 ├── .env.example                       # committed; .env (api) is gitignored
 ├── docs/
 │   └── system-overview.html
@@ -70,7 +70,7 @@ jdparser/
 │   │   │   │   ├── client.py          # OpenRouter (OpenAI SDK + instructor) + routing (§6.3)
 │   │   │   │   ├── schemas.py         # ALL Pydantic models (§3.3–§3.10, §5.2)
 │   │   │   │   ├── resume_profiler.py # profile_resume()
-│   │   │   │   ├── search_planner.py  # plan_adzuna_queries()
+│   │   │   │   ├── search_planner.py  # plan_queries()
 │   │   │   │   ├── jd_parser.py       # parse_jd_requirements()
 │   │   │   │   └── fit_judge.py       # judge_fit()
 │   │   │   ├── adzuna/
@@ -156,14 +156,19 @@ class JobMatchState(TypedDict):
     # --- resume → profile ---
     resume_text: str | None
     resume_fingerprint: str | None        # == cache_key (§3.7)
-    resume_profile_id: str | None
     resume_profile: dict | None           # ResumeProfile.model_dump()
     resume_cache_hit: bool
+    candidate_notes: list[dict]           # list[CandidateNote.model_dump()] (§7.7)
 
     # --- discovery ---
+    search_locations: list[str] | None    # per-run location override (None = profile's inferred)
+    broaden_search: bool                  # False = strict locations (drop the nationwide query)
+    max_days_old: int | None              # per-run listing-age cap in days (None/<=0 = any)
+    include_agencies: bool                # True = let agency listings past the screen (§7.7)
     search_plan: list[dict] | None        # list[AdzunaQuery.model_dump()]
-    adzuna_results: list[dict]            # raw Adzuna job dicts (§3.8.1)
-    deduped_jobs: list[dict]              # deduped raw Adzuna job dicts
+    job_results: list[dict]               # list[Job.model_dump()] — normalized at the source
+    deduped_jobs: list[dict]              # deduped + relevance-screened Job.model_dump()s
+    screened_out: list[dict]              # jobs dropped before evaluation, with reason (§7.7)
 
     # --- evaluation (fan-out reducers; see §3.10 for lifecycle) ---
     evaluated_jobs: Annotated[list[dict], operator.add]   # list[EvaluatedJob]
@@ -327,8 +332,6 @@ Canonical (snake_case) — **supersedes** the camelCase TS shape in the overview
 class StoredResumeProfile(BaseModel):
     id: str                  # uuid4
     user_id: str
-    file_hash: str           # sha256(file bytes)            (§3.8.4)
-    text_hash: str           # sha256(normalized text)       (§3.8.4)
     cache_key: str           # == resume_fingerprint         (§3.8.4)
     profile: ResumeProfile
     parser_version: str      # PARSER_VERSION  (§6.1)
@@ -388,8 +391,9 @@ class QualityResult(BaseModel):
 
 ```python
 class Fingerprint(BaseModel):
-    file_hash: str    # sha256(raw file bytes), hex
-    text_hash: str    # sha256(normalized resume text utf-8), hex
+    # Only cache_key is persisted. file_hash/text_hash were written but never read —
+    # lookup has always been by cache_key alone — and file_hash forced a full-file
+    # read_bytes() purely to store an unused value. Removed in b5a7d6d.
     cache_key: str    # sha256(f"{text_hash}:{PARSER_VERSION}:{SCHEMA_VERSION}"), hex
 ```
 
@@ -535,14 +539,14 @@ def fingerprint_resume(state: JobMatchState) -> dict
     #    is recomputed in load_or_parse_profile on a cache miss)
 
 def load_or_parse_profile(state: JobMatchState) -> dict
-    # cache hit  -> {"resume_profile": p, "resume_profile_id": id, "resume_cache_hit": True}
+    # cache hit  -> {"resume_profile": p, "resume_cache_hit": True, "candidate_notes": [...]}
     # cache miss -> calls profile_resume(); put_profile(); returns same shape with cache_hit False
 
 def plan_searches(state: JobMatchState) -> dict
     # -> {"search_plan": [AdzunaQuery.model_dump(), ...]}
 
-def run_adzuna_search(state: JobMatchState) -> dict
-    # -> {"adzuna_results": [raw job dict, ...]}
+def search_jobs(state: JobMatchState) -> dict
+    # -> {"job_results": [raw job dict, ...]}
 
 def dedupe_jobs(state: JobMatchState) -> dict
     # -> {"deduped_jobs": [raw job dict, ...]}
@@ -606,7 +610,7 @@ parent `evaluated_jobs` reducer (§3.10).
 
 ```python
 def profile_resume(resume_text: str) -> ResumeProfile          # resume_profiler.py  (logic)
-def plan_adzuna_queries(profile: ResumeProfile) -> list[AdzunaQuery]  # search_planner.py (logic)
+def plan_queries(profile: ResumeProfile) -> list[AdzunaQuery]  # search_planner.py (logic)
 def parse_jd_requirements(jd_text: str) -> JobRequirements      # jd_parser.py       (Gemini Flash Lite)
 def judge_fit(profile: ResumeProfile, requirements: JobRequirements) -> FitJudgment  # fit_judge.py (logic)
 ```
@@ -723,10 +727,15 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `MIN_JD_CHARS` | `600` | characters; min extracted JD text length to pass quality |
 | `MAX_JD_CHARS` | `60000` | characters; truncate JD before LLM (cost guard) |
 | `JD_BOILERPLATE_MAX_RATIO` | `0.40` | fraction; max nav/boilerplate share before quality fail |
+| `BOILERPLATE_LINE_MAX_WORDS` | `12` | words; the boilerplate substring check applies only at or under this length. A complete JD collapsed into one long line can legitimately END in "…All rights reserved."; only a genuinely short standalone nav/footer line should condemn the text. |
+| `SCREEN_EVAL_CAP` | `80` (env `SCREEN_EVAL_CAP`) | count; hard ceiling on how many screened jobs reach the expensive per-job fan-out, so a wide pull can't blow past the frontend poll timeout. The screen RANKS by relevance and the top N are kept; the rest are recorded `screened_out` with reason `over_cap`. Applied even when the screen errors. |
+| `SCREEN_BATCH_SIZE` | `150` (env `SCREEN_BATCH_SIZE`) | count; max jobs per screener LLM call. The screener enumerates every relevant/agency id, so its output cost scales with pool size — a 1000+ job pull overflows one call's `max_tokens` and truncates. The pool is chunked and results merged. |
+| `SEARCH_MAX_DAYS_OLD_DEFAULT` | `7` | days; default listing-age cap for a run (0 = any age). User-selectable per run. |
 | `SEARCH_PLAN_MAX_QUERIES` | `8` (env `SEARCH_PLAN_MAX_QUERIES`) | count; cap on planner output queries — bumped from 6 for more distinct role-variant coverage |
 | `ADZUNA_MAX_PAGES` | `5` (env `ADZUNA_MAX_PAGES`) | count; max pages per query (path param) — bumped from 3: a nationwide query's fixed `results_per_page`x`pages` budget spreads over a much larger area than a geo-scoped one, so a concentrated niche field can starve otherwise |
 | `ADZUNA_DEFAULT_RESULTS_PER_PAGE` | `20` | count; schema default for `results_per_page` |
 | `ADZUNA_MAX_RESULTS_PER_PAGE` | `50` | count; Adzuna hard max (schema upper bound) |
+| `HTTP_REFERER` | `"https://www.adzuna.com/"` | string; Referer on every page fetch + URL resolution. Deliberately provider-specific in a provider-agnostic layer: Adzuna's `/land/...` redirects 403 a referrer-less request even with a browser UA, and JD extraction starts by following exactly those redirects. Empirical, not principled — do not generalize it to the target host. |
 | `HTTP_USER_AGENT` | `"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"` | string; UA for httpx + Playwright fetches. **Spec-corrected (was a `compatible; jdparser/1.0` polite-bot string):** Adzuna landing pages and many ATS bot-protections return **403** to a non-browser UA, which makes the JD-extraction flow (§7.5) impossible; a browser UA returns the full JobPosting JSON-LD. One UA constant for both fetch paths. |
 | `ADZUNA_COUNTRY` | `"us"` | Adzuna country code (MVP-fixed, §8/§9) |
 | `ADZUNA_BASE_URL` | `"https://api.adzuna.com/v1/api"` | URL base |
@@ -766,7 +775,7 @@ Generous defaults; **every field is overridable at startup via an env var** (bel
 | node key | function | model | temperature | max_tokens | reasoning | Rationale |
 |---|---|---|---|---|---|---|
 | `profiler` | `profile_resume` | `MODEL_LOGIC` | `0.2` | `8000` | `off` | logic: seniority/domain/authorization inference + verbose `evidence[]` |
-| `planner` | `plan_adzuna_queries` | `MODEL_LOGIC` | `0.3` | `4000` | `off` | logic: synonym expansion (small output) |
+| `planner` | `plan_queries` | `MODEL_LOGIC` | `0.3` | `4000` | `off` | logic: synonym expansion (small output) |
 | `jd_parser` | `parse_jd_requirements` | `MODEL_GEMINI_FLASH_LITE` | `0.1` | `6000` | `off` | text extraction: stated requirements from JD |
 | `judge` | `judge_fit` | `MODEL_LOGIC` | `0.2` | `10000` | `medium` | logic: the one node that genuinely reasons; `met_requirements[]` + `rationale` + reasoning headroom (bumped from `low`: thematic/functional fit needs more than mechanical skill-list matching) |
 
@@ -787,7 +796,7 @@ fields fall back to the defaults above when the env var is unset. `<NODE>` ∈
 
 | field | env var | example |
 |---|---|---|
-| model slug | `LLM_MODEL_<NODE>` | `LLM_MODEL_JUDGE=z-ai/glm-5.1` |
+| model slug | `LLM_MODEL_<NODE>` | `LLM_MODEL_JUDGE=google/gemini-3.1-flash-lite` |
 | temperature | `LLM_TEMP_<NODE>` | `LLM_TEMP_PROFILER=0.1` |
 | max_tokens (ceiling) | `LLM_MAX_TOKENS_<NODE>` | `LLM_MAX_TOKENS_PROFILER=12000` |
 | reasoning | `LLM_REASONING_<NODE>` | `LLM_REASONING_JUDGE=high` |
@@ -871,24 +880,29 @@ cite them precisely.
 - **§7.6 — Determinism of display.** The visible set is computed by `is_qualified()`
   code (§ below), not by asking an LLM which jobs to show. (Code review + Tier 2.)
 
-### `is_qualified()` (deterministic; `graph/nodes.py`)
+### `is_qualified()` (deterministic; implemented in `graph/nodes.py`)
 
-```python
-def is_qualified(ej: dict) -> bool:
-    j = ej.get("judgment")
-    return bool(
-        ej["status"] == "qualified"
-        and j is not None
-        and j["decision"] == "qualified"
-        and j["confidence"] >= CONFIDENCE_THRESHOLD
-        and j["thematic_fit"]                          # §7.2: redundant thematic-fit guard
-        and not j["failed_dealbreakers"]
-        and not j["missing_hard_requirements"]
-        and ej.get("requirements") is not None        # §7.1: full JD parsed
-        and ej.get("final_url")                        # §7.1: resolved URL
-        and (ej.get("jd_char_len") or 0) >= MIN_JD_CHARS  # §7.1: JD length gate
-    )
-```
+**Normative:** a job is displayed if and only if ALL of the following hold. This spec
+states the contract; `graph/nodes.py:is_qualified` is the single implementation. The
+source is deliberately NOT reproduced here — it was, and the copy drifted from the
+original (REFACTOR_AUDIT F15). A display gate with two definitions has none.
+
+| # | Condition | Why |
+|---|---|---|
+| 1 | `status == "qualified"` | the §3.9 derivation agreed |
+| 2 | a `judgment` is present | nothing to justify the match otherwise |
+| 3 | `judgment.decision == "qualified"` | re-checked independently of `status` |
+| 4 | `judgment.confidence >= CONFIDENCE_THRESHOLD` | §7.3 |
+| 5 | `judgment.thematic_fit` | §7.2 — right profession, not just matching keywords |
+| 6 | `judgment.failed_dealbreakers` is empty | §7.2 |
+| 7 | `judgment.missing_hard_requirements` is empty | §7.2 |
+| 8 | `requirements` is not null | §7.1 — the full JD was parsed |
+| 9 | `final_url` is set | §7.1 — the posting resolved to a real page |
+| 10 | `jd_char_len >= MIN_JD_CHARS` | §7.1 — enough JD text to judge on |
+
+Conditions 3–7 duplicate checks that `status` already reflects. That redundancy is the
+point: re-deriving them here means a stale or incorrect `status` can never leak a job
+into the feed.
 
 `status` is set upstream in the subgraph terminal nodes per the §3.9 derivation table
 (NOT in `aggregate_matches`, which only filters). `is_qualified` is the final display
@@ -906,10 +920,89 @@ Tier-2 assertion. (Documented per method: state explicitly when 3.5 is/ isn't us
 
 ---
 
+## 7.7 Post-spec features (normative)
+
+**Per-run LLM spend (`RunRecord.usage`).** Every OpenRouter call in a run is counted into
+`LlmUsage` (`calls`, `prompt_tokens`, `completion_tokens`, `cost_usd`, `cost_complete`)
+and written to the run record, on success AND on failure — a run that died at the judge
+still cost money.
+
+`cost_usd` is **OpenRouter's own figure**, requested per call via `usage.include`, not a
+local price table: it stays correct when prices change or routing moves to a different
+upstream provider. If any call returns no cost, `cost_complete` goes false and the UI
+reports the total as a floor ("Cost at least …") rather than as authoritative.
+
+Counting happens on instructor's `completion:response` hook, so re-asks after a validation
+failure are included — they are billed, and omitting them would understate exactly the
+runs that cost the most. Attribution is a `ContextVar` set per run, which reaches
+LangGraph's fan-out workers; concurrent runs do not pool their spend. `usage` is `None` on
+records written before this existed, which is distinct from a real zero.
+
+
+Three user-visible features shipped after this spec was first written and are documented
+here rather than being retrofitted into §3–§4 (REFACTOR_AUDIT F5).
+
+**Relevance pre-screen + `screened_out`.** Before the expensive per-job fan-out, a cheap
+batched LLM screen reads only the search result's title/company/snippet and drops jobs
+outside the candidate's field. Survivors are ranked most-relevant-first and capped at
+`SCREEN_EVAL_CAP`. Everything dropped is recorded in `RunRecord.screened_out` with a
+`reason` of `off_field`, `agency`, or `over_cap`, and surfaced in the audit panel — the
+user always sees what was skipped and why. Fault-tolerant: a screen failure, or a screen
+that would drop everything, falls back to the whole deduped pool. The cap still applies.
+
+**Recruitment-agency filter (`include_agencies`).** Agency status is a SECOND relevance
+dimension, independent of field. The screener flags third-party recruiter/staffing
+postings; they are screened out (`reason: "agency"`) unless the run opts in. When
+included, they sort BEHIND direct employers so the evaluation budget fills with direct
+employers first, and carry `EvaluatedJob.is_recruitment_agency` through to a UI badge.
+The ordering is server-side only — the frontend renders the order it is given.
+
+**Candidate feedback loop (`candidate_notes`).** `POST /api/feedback` accepts free-text on
+any JUDGED job, in **both** directions:
+
+| Job bucket | Correction | Typical note |
+|---|---|---|
+| `qualified_jobs` | false positive — "you told me I qualify, but I don't" | a constraint the resume didn't make obvious (`dealbreaker` / `preference`) |
+| `rejected` | false negative — "you passed me over, but I do fit" | evidence the resume understated (`context`) |
+
+`failures` are NOT eligible: a job that broke at fetch/parse has no judgment to disagree
+with. The endpoint infers the direction from which bucket holds the job and passes it to
+the distiller as `outcome`, because the two read identically as free text — without it a
+"you were too harsh" correction would be distilled into a dealbreaker and make future
+matching strictly worse.
+
+An LLM distills the text into the candidate's persistent note list keyed by resume
+`cache_key` — merging, not appending, so a new note supersedes one it contradicts
+(including across directions: the candidate's latest word wins). Notes are typed
+`dealbreaker` / `preference` / `context`. A triggered dealbreaker fails a job exactly like
+a JD-stated one; a `context` note is authoritative fact about the candidate and **counts as
+evidence**, so a skill asserted there can satisfy a required skill the resume omitted (§4.4,
+fit_judge). That is what makes a false-negative correction actually change the next
+verdict rather than just being recorded.
+
+`DELETE /api/profiles/{cache_key}/notes/{index}` removes one note by its index in the
+STORED list. It does NOT re-distill: deletion is the user overruling the model, and
+running the survivors back through the LLM could reword them or argue the note back in.
+The response returns the remaining list plus the deleted text.
+
+`POST /api/profiles/{cache_key}/notes` adds feedback with NO job attached ("I won't
+relocate", "the 2019 gap was contract work"), for the large class of corrections that
+have no verdict to hang on. Same distillation, `job_context` null. `GET /api/profiles`
+carries `notes` on each summary so the picker can show the list without a second fetch.
+
+The note list IS the summary: distillation merges each new piece of feedback into it
+rather than appending, so it can shrink when a new note supersedes an old one. The
+frontend shows it under a selected saved resume, grouped dealbreaker-first.
+
+Applies to the candidate's NEXT run only; evaluated jobs are never re-judged. `notes`
+defaults to `[]`, so it needed no `SCHEMA_VERSION` bump.
+
 ## 8. Out of scope
 
 - Authentication / accounts (single fixed `user_id = "local"`).
-- Job sources other than Adzuna; countries other than `ADZUNA_COUNTRY`.
+- A second job source. The `JobSource` seam exists (`jobsource/base.py`) with Adzuna
+  as the only implementation — the abstraction is in place; multi-source is not.
+- Countries other than `ADZUNA_COUNTRY`.
 - Applying to jobs / write-back.
 - A real database; durable cache and runs are JSON flat-files.
 - Push/streaming run progress (WebSocket/SSE) — frontend polls.
@@ -937,8 +1030,9 @@ user-visible behavior.
    `lib/types.ts` mirrors snake_case fields directly — no camelCase remap layer.
    This supersedes the camelCase TS shape in `docs/system-overview.html`.
 2. **Provider + model routing** per §6.3: **OpenRouter** via the OpenAI SDK +
-   `instructor`; **gemini-3.1-flash-lite** (`z-ai/glm-5.2`) for logic nodes, **Gemini 3.1 Flash
-   Lite** (`google/gemini-3.1-flash-lite`) for literal JD extraction.
+   `instructor`; **Gemini 3.1 Flash Lite** (`google/gemini-3.1-flash-lite`) for logic
+   nodes AND for literal JD extraction. The two routing constants (`MODEL_LOGIC`,
+   `MODEL_GEMINI_FLASH_LITE`) currently resolve to the same slug — see §6.3.
 3. **JD extraction** order: JSON-LD `JobPosting.description` → ATS-specific parser →
    `trafilatura` readable text. Playwright is a fallback only when static fetch
    yields thin/JS-gated content (§ EXTRACT).
@@ -958,15 +1052,15 @@ user-visible behavior.
 
 ## 11. Pin validation
 
-All Python and JS pins in `IMPLEMENTATION.md` §Foundations were probed against
+All Python and JS pins in `docs/IMPLEMENTATION.md` §Foundations were probed against
 their registries and found reachable (`pip index versions` / `npm view` are used
 here as **read-only probe tools only**; the project installs via **uv** and **bun** —
 PyPI 2026-06-25;
 `openai`/`instructor` 2026-06-26). The **web pins were re-probed 2026-06-26** (`npm
 view`) and are the current latest-stable releases, now pinned exact (incl.
 `@types/{react,react-dom,node}`); Next 16.2.9 / React 19.2.7 are the newest stable
-majors (Next 16 peers `react ^18.2||^19`). The two OpenRouter model slugs
-(`z-ai/glm-5.2`, `google/gemini-3.1-flash-lite`) were confirmed present and priced
+majors (Next 16 peers `react ^18.2||^19`). The OpenRouter model slug
+(`google/gemini-3.1-flash-lite`) was confirmed present and priced
 on the OpenRouter models API (`GET /api/v1/models`) **as of 2026-06-26**. Remaining
 Python versions flagged "verify before relying" in the table were not individually
 probed.

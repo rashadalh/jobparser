@@ -1,6 +1,27 @@
 "use client";
 
-import type { RunRecord } from "@/lib/types";
+import type { LlmUsage, RunRecord } from "@/lib/types";
+
+// Sub-cent runs are the normal case, so two decimals would show every run as "$0.00".
+// Four gets real resolution without pretending to more precision than exists.
+function formatCost(usd: number): string {
+  if (usd === 0) return "$0";
+  if (usd < 0.0001) return "<$0.0001";
+  return `$${usd.toFixed(4)}`;
+}
+
+function CostLine({ usage }: { usage: LlmUsage }) {
+  const tokens = usage.prompt_tokens + usage.completion_tokens;
+  return (
+    <p data-testid="run-cost" className="mt-1 text-sm text-green-700">
+      {usage.cost_complete ? "Cost" : "Cost at least"}{" "}
+      <span className="font-medium">{formatCost(usage.cost_usd)}</span> across{" "}
+      {usage.calls} model {usage.calls === 1 ? "call" : "calls"} and{" "}
+      {tokens.toLocaleString()} tokens
+      {usage.cost_complete ? "" : " (some calls didn't report a price)"}
+    </p>
+  );
+}
 
 function Spinner() {
   return (
@@ -32,7 +53,7 @@ export default function RunStatus({
   if (run.status === "pending" || run.status === "running") {
     const label =
       run.status === "pending"
-        ? "Queued — preparing your run…"
+        ? "Queued. Getting your run ready…"
         : run.phase ?? "Matching jobs against your resume…";
     // Show a progress bar once the eval fan-out size is known (jobs_total > 0).
     const showBar = run.jobs_total != null && run.jobs_total > 0;
@@ -66,6 +87,12 @@ export default function RunStatus({
         {run.error && (
           <p className="mt-1 text-sm text-red-700">{run.error}</p>
         )}
+        {run.usage && run.usage.calls > 0 && (
+          <p data-testid="run-cost" className="mt-1 text-sm text-red-700">
+            It still spent {formatCost(run.usage.cost_usd)} across {run.usage.calls}{" "}
+            model {run.usage.calls === 1 ? "call" : "calls"} before failing.
+          </p>
+        )}
       </div>
     );
   }
@@ -73,15 +100,16 @@ export default function RunStatus({
   // completed
   const cacheMsg =
     run.resume_cache_hit === true
-      ? "Loaded your profile from cache"
+      ? "Reused your saved profile"
       : run.resume_cache_hit === false
-        ? "Parsed a fresh profile"
+        ? "Parsed your resume from scratch"
         : null;
 
   return (
     <div className="rounded-lg border border-green-200 bg-green-50 p-4">
       <p className="text-sm font-semibold text-green-800">Run complete</p>
       {cacheMsg && <p className="mt-1 text-sm text-green-700">{cacheMsg}</p>}
+      {run.usage && <CostLine usage={run.usage} />}
     </div>
   );
 }

@@ -9,8 +9,8 @@ preserve source metadata + redirect URLs, and merge duplicate listings.
 
 ## Files this area owns
 
-- `packages/api/jdparser/adzuna/client.py`
-- `packages/api/jdparser/adzuna/dedupe.py`
+- `packages/api/jdparser/jobsource/adzuna/client.py`
+- `packages/api/jdparser/jobsource/dedupe.py`
 - tests: `tests/test_dedupe.py` (+ Adzuna client tests via `respx`)
 
 Must NOT edit `extract/`, `graph/`, `llm/`.
@@ -37,7 +37,7 @@ Endpoint (GET):
 `ADZUNA_BASE_URL`, `ADZUNA_COUNTRY` from SPEC §6.1. Credentials from env
 (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`).
 
-## `adzuna/client.py`
+## `jobsource/adzuna/client.py`
 
 ```python
 import httpx
@@ -82,16 +82,16 @@ def run_search_plan(plan: list[AdzunaQuery]) -> list[dict]:
     return out
 ```
 
-Failure handling: `run_adzuna_search` node (graph) wraps `run_search_plan`; a single
+Failure handling: `search_jobs` node (graph) wraps `run_search_plan`; a single
 query's failure should append an `ErrorRecord` and continue with remaining queries
 (catch per-query). Implement per-query try/except inside `run_search_plan` OR in the
 node — **decision: do it in the node** so this module stays pure (raises on the first
-failure; node decides whether to continue). See IMPLEMENTATION_GRAPH §run_adzuna_search.
+failure; node decides whether to continue). See IMPLEMENTATION_GRAPH §search_jobs.
 
 > Drift note: this signature (`run_search_plan` raises on first failure) is canonical.
 > The graph node owns the continue-on-partial-failure policy.
 
-## `adzuna/dedupe.py`
+## `jobsource/dedupe.py`
 
 ```python
 def _key(job: dict) -> tuple[str, str, str, str]:

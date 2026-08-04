@@ -25,8 +25,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Resume Job Matcher</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Upload a resume — see only the jobs you qualify for, each backed by
-          cited evidence.
+          Upload your resume and see only the jobs you actually qualify for.
+          Every match shows you the evidence behind it.
         </p>
       </header>
       <div className="space-y-6">{children}</div>
@@ -92,12 +92,22 @@ export default function Home() {
     }, POLL_INTERVAL_MS);
   }
 
-  async function handleSubmit(file: File) {
+  // Shared preamble for every action that supersedes what's on screen.
+  //
+  // `keepRun` is not incidental: handleOpenRun deliberately leaves the previous run
+  // rendered while the next one loads, so the panel doesn't flash empty. That difference
+  // was previously buried in four near-identical copies where it read as an oversight —
+  // it's a choice, so it's a parameter.
+  function resetForNewAction({ keepRun = false }: { keepRun?: boolean } = {}) {
     stopPolling();
     setError(null);
     setTimedOut(false);
-    setRun(null);
     setParsedProfile(null);
+    if (!keepRun) setRun(null);
+  }
+
+  async function handleSubmit(file: File) {
+    resetForNewAction();
     setPhase("starting");
     try {
       const { run_id } = await startRun(file);
@@ -112,12 +122,8 @@ export default function Home() {
   // Parse a resume into a profile ONLY — no job search (fast). Caches it so it can
   // then be reused for a search from the dropdown.
   async function handleParse(file: File) {
-    stopPolling();
-    setError(null);
-    setTimedOut(false);
-    setRun(null);
-    setPhase("idle");
-    setParsedProfile(null);
+    resetForNewAction();
+    setPhase("idle");   // parse-only: no run starts, so the phase stays idle
     setParsing(true);
     try {
       const stored = await parseResume(file);
@@ -140,11 +146,7 @@ export default function Home() {
     maxDaysOld: number,
     includeAgencies: boolean,
   ) {
-    stopPolling();
-    setError(null);
-    setTimedOut(false);
-    setRun(null);
-    setParsedProfile(null);
+    resetForNewAction();
     setPhase("starting");
     try {
       const { run_id } = await startRunFromProfile(
@@ -164,10 +166,7 @@ export default function Home() {
 
   // Open a historical run from the DB and display it (poll only if still in flight).
   async function handleOpenRun(runId: string) {
-    stopPolling();
-    setError(null);
-    setTimedOut(false);
-    setParsedProfile(null);
+    resetForNewAction({ keepRun: true });  // keep the current run visible while loading
     setPhase("starting");
     try {
       const rec = await getRun(runId);
@@ -219,16 +218,16 @@ export default function Home() {
       {parsing && (
         <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm">
           <span className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-          Parsing your resume… (no job search)
+          Parsing your resume. This won&apos;t search for jobs yet…
         </div>
       )}
 
       {parsedProfile && !parsing && (
         <section className="space-y-2">
           <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-            Resume parsed — <span className="font-medium">no job search run</span>. It&apos;s
-            saved; pick it under &ldquo;Reuse a previously parsed resume&rdquo; to search
-            without re-parsing.
+            Resume parsed. <span className="font-medium">No job search has run yet.</span> It&apos;s
+            saved, so you can pick it under &ldquo;Reuse a previously parsed resume&rdquo; to
+            search without parsing it again.
           </div>
           <ResumeProfileView profile={parsedProfile} />
         </section>
@@ -245,9 +244,9 @@ export default function Home() {
 
       {timedOut && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          This run is taking longer than expected. We&apos;ve stopped polling
-          after {Math.round(POLL_TIMEOUT_MS / 1000)} seconds — it may still be
-          running on the server. Try again later or re-upload.
+          This run is taking longer than expected, so we stopped checking after{" "}
+          {Math.round(POLL_TIMEOUT_MS / 1000)} seconds. It may still be running on
+          the server. Try again in a bit, or upload your resume again.
         </div>
       )}
 
@@ -265,6 +264,7 @@ export default function Home() {
           rejected={run.rejected}
           errors={run.errors}
           screened={run.screened_out ?? []}
+          runId={run.run_id}
         />
       )}
     </Shell>

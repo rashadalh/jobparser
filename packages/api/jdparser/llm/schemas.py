@@ -227,7 +227,15 @@ class EvaluatedJob(BaseModel):
 
 # --- §3.10 ErrorRecord -------------------------------------------------------
 ErrorStage = Literal[
-    "resume_extract", "profile", "search_plan", "adzuna_search", "screen",
+    "resume_extract", "profile", "search_plan",
+    "job_search",
+    # BACK-COMPAT — never emitted by current code. Run records written before the
+    # job-source seam (REFACTOR_AUDIT Phase 3) carry this value, and runs/store.list_runs
+    # skips any record that fails validation with a bare `except: continue`. Deleting this
+    # literal would therefore erase the user's entire run history from the UI with no error,
+    # no log line, and no failing test. It looks like dead code; it is not. Leave it.
+    "adzuna_search",
+    "screen",
     "resolve", "fetch", "extract", "quality", "parse", "judge", "aggregate",
 ]
 
@@ -239,6 +247,19 @@ class ErrorRecord(BaseModel):
     message: str
     # reason: heterogeneous JSON passthrough (SPEC §3.8.1/§5.2)
     detail: dict[str, Any] | None = None
+
+
+# --- LLM spend for one run ---------------------------------------------------
+class LlmUsage(BaseModel):
+    """What the run's LLM calls cost. `cost_usd` is OpenRouter's own figure, not a
+    local estimate; `cost_complete` is False if any call came back without one, in
+    which case the total is a floor rather than the full amount."""
+
+    calls: int
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float
+    cost_complete: bool = True
 
 
 # --- §5.2 RunRecord (API response + on-disk run record) ----------------------
@@ -269,4 +290,7 @@ class RunRecord(BaseModel):
     errors: list[dict[str, Any]]
     # jobs dropped by the relevance pre-screen (off-field) — audit/transparency
     screened_out: list[dict[str, Any]] = []  # reason: heterogeneous JSON passthrough
+    # None on runs that predate token accounting, and on runs that failed before any
+    # LLM call — distinct from a real zero, which means calls happened and were free.
+    usage: LlmUsage | None = None
     error: str | None

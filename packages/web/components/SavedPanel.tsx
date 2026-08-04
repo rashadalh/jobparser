@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { listProfiles, listRuns } from "@/lib/api";
-import type { ProfileSummary, RunSummary } from "@/lib/types";
+import type { CandidateNote, ProfileSummary, RunSummary } from "@/lib/types";
+import CandidateNotes from "@/components/CandidateNotes";
 
 function profileLabel(p: ProfileSummary): string {
   const role = p.roles[0] ?? "resume";
@@ -49,6 +50,16 @@ export default function SavedPanel({
   const [maxDaysOld, setMaxDaysOld] = useState<number>(7); // listing-age cap in days (0 = any)
   const [includeAgencies, setIncludeAgencies] = useState<boolean>(false); // recruitment agencies
 
+  const selectedProfile = profiles.find((p) => p.cache_key === selected);
+
+  // The server returns the FULL re-distilled list, so replace rather than append —
+  // a new note may have merged into or superseded an existing one.
+  function updateSelectedNotes(notes: CandidateNote[]) {
+    setProfiles((prev) =>
+      prev.map((p) => (p.cache_key === selected ? { ...p, notes } : p)),
+    );
+  }
+
   function selectProfile(key: string) {
     setSelected(key);
     const p = profiles.find((x) => x.cache_key === key);
@@ -93,7 +104,7 @@ export default function SavedPanel({
           <label className="text-sm font-medium text-gray-700">
             Reuse a previously parsed resume{" "}
             <span className="font-normal text-gray-500">
-              (no re-upload, no re-parse — runs a fresh job search)
+              (no re-upload needed, and it still runs a fresh job search)
             </span>
           </label>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -128,8 +139,8 @@ export default function SavedPanel({
               <label className="text-xs font-medium text-gray-600">
                 Locations to search{" "}
                 <span className="font-normal text-gray-400">
-                  — pre-filled from the resume; add or remove, or clear all for a
-                  nationwide search
+                  (pre-filled from your resume. Add or remove them, or clear them all
+                  to search nationwide.)
                 </span>
               </label>
               <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -186,7 +197,7 @@ export default function SavedPanel({
                 />
                 Include broader results (also search nationwide)
                 <span className="text-gray-400">
-                  — uncheck to restrict strictly to the locations above
+                  (uncheck to stay strictly within the locations above)
                 </span>
               </label>
 
@@ -208,7 +219,7 @@ export default function SavedPanel({
                   <option value={30}>1 month</option>
                   <option value={0}>Any time</option>
                 </select>
-                <span className="text-gray-400">— defaults to the past week</span>
+                <span className="text-gray-400">(defaults to the past week)</span>
               </label>
 
               <label className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
@@ -221,11 +232,30 @@ export default function SavedPanel({
                 />
                 Include recruitment agencies
                 <span className="text-gray-400">
-                  — off by default; agency listings are screened out before evaluation
+                  (off by default. Agency listings are filtered out before we evaluate them.)
                 </span>
               </label>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Its own card, deliberately NOT inside the search-filter stack above. Nested in
+          there it rendered as a fifth filter: same small gray label, same indent, last in
+          a list of checkboxes. Nobody found it. This is a different concept (what the
+          matcher believes about you, persisting across every run) and it needs to look
+          like one. */}
+      {selected && (
+        <div
+          data-testid="candidate-notes-card"
+          className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+        >
+          <CandidateNotes
+            cacheKey={selected}
+            notes={selectedProfile?.notes ?? []}
+            onNotesChange={updateSelectedNotes}
+            disabled={disabled}
+          />
         </div>
       )}
 

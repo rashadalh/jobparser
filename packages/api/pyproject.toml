@@ -36,6 +36,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["jdparser"]
+# Prompts are .md, not .py — without this they are absent from an installed wheel and
+# every LLM node raises FileNotFoundError at import.
+artifacts = ["jdparser/llm/prompts/*.md"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

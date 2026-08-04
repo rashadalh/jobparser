@@ -127,3 +127,35 @@ Poll loop: `setInterval(getRun, POLL_INTERVAL_MS)`, stop when
   failures appear only in `FailuresPanel`, never the main feed.
 - No hydration warnings in the console (client-only state is `mounted`-gated).
 - This is the surface that satisfies the definition of done (SPEC §7.5, Tier-3).
+
+## Feedback affordances
+
+`components/FeedbackForm.tsx` is the single implementation of the "the judge got this
+wrong" flow. Two call sites, differing only in copy:
+
+| Where | Opens with | Records |
+|---|---|---|
+| `JobCard` (qualified) | "Not a fit?" | a false positive |
+| `RejectedItem` (audit panel) | "Disagree with this?" | a false negative |
+
+Both need `runId`, which is why `FailuresPanel` takes one and threads it to
+`RejectedItem`. The server decides which correction it is from the job's bucket — the
+client does not send a direction, so the two forms cannot disagree with the backend about
+what they mean.
+
+`FailedItem` deliberately has no form: there is no judgment to push back on.
+
+## Candidate notes panel
+
+`components/CandidateNotes.tsx`, rendered by `SavedPanel` once a saved resume is selected.
+Shows the distilled feedback list and takes new feedback that isn't about any one job.
+
+The list is already a summary — the server re-distills the whole thing on every
+submission — so `onNotesChange` REPLACES local state with the server's returned list
+rather than appending to it. Appending would show a note twice when the distiller merged
+it into an existing one, and would hide the case where the list legitimately shrinks.
+
+The panel sorts dealbreakers first, so display order is NOT storage order. Each row
+carries the note's stored index through the sort and sends that to the delete endpoint.
+Sending the display index would delete a different note than the one whose × was clicked,
+silently and unrecoverably.

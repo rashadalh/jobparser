@@ -64,11 +64,15 @@ HTTP_USER_AGENT: str = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
-# Adzuna's own `/land/...` redirect pages sometimes 403 a referrer-less request even with
-# a browser UA (observed: real browser traffic always carries a Referer, ours didn't) —
-# a plausible bot signal on top of UA. Cheap to set, no guarantee against an IP-reputation-
-# based block specifically (see fetch.py/resolve.py callers).
-JD_FETCH_REFERER: str = "https://www.adzuna.com/"
+# Referer sent on EVERY page fetch and URL resolution (fetch.py / resolve.py).
+#
+# The value is deliberately provider-specific even though this is a provider-agnostic
+# layer: Adzuna's own `/land/...` redirect pages 403 a referrer-less request even with a
+# browser UA (observed: real browser traffic always carries a Referer, ours didn't), and
+# the JD-extraction flow starts by following exactly those redirects. Chosen empirically,
+# not by principle — do not "generalize" it to the target host or drop it. Cheap to set, no
+# guarantee against an IP-reputation-based block specifically.
+HTTP_REFERER: str = "https://www.adzuna.com/"
 ADZUNA_COUNTRY: str = "us"                  # Adzuna country code (MVP-fixed, §8/§9)
 ADZUNA_BASE_URL: str = "https://api.adzuna.com/v1/api"
 EVAL_FANOUT_CONCURRENCY: int = 8            # count; max concurrent job-eval workers
@@ -84,7 +88,11 @@ SCREEN_EVAL_CAP: int = int(os.getenv("SCREEN_EVAL_CAP", "80"))  # count; max job
 SCREEN_BATCH_SIZE: int = int(os.getenv("SCREEN_BATCH_SIZE", "150"))
 FETCH_TIMEOUT_S: int = 20                   # seconds; httpx request timeout
 PLAYWRIGHT_TIMEOUT_MS: int = 30000          # milliseconds; Playwright nav/render timeout
-HTTP_MAX_RETRIES: int = 2                   # count; httpx retry attempts on 5xx/timeout
+# count; retry attempts for transient upstream failures. NOTE the two uses differ:
+# httpx's `HTTPTransport(retries=)` retries CONNECTION errors only and does nothing for an
+# HTTP error response (verified: retries=5 against a 503 issues exactly one request), so
+# retrying a 5xx takes an explicit request loop — see jobsource/adzuna/client.search.
+HTTP_MAX_RETRIES: int = 2
 PARSER_VERSION: str = "1.1.0"               # semver; resume parsing logic version (1.1.0: total-career years)
 SCHEMA_VERSION: str = "1.2.0"               # semver; ResumeProfile schema (1.1.0: education; 1.2.0: work_periods)
 
