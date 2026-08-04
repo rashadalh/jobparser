@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { addProfileNote } from "@/lib/api";
+import { addProfileNote, deleteProfileNote } from "@/lib/api";
 import type { CandidateNote } from "@/lib/types";
 
 const KIND_LABEL: Record<string, string> = {
@@ -44,9 +44,28 @@ export default function CandidateNotes({
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const sorted = [...notes].sort(
-    (a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind),
-  );
+  const [removed, setRemoved] = useState<string | null>(null);
+
+  // Carry each note's STORED index through the sort. The delete endpoint indexes into
+  // the stored list while this view reorders it, so passing the display index would
+  // delete a different note than the one whose × was clicked.
+  const ordered = notes
+    .map((note, storedIndex) => ({ note, storedIndex }))
+    .sort(
+      (a, b) => KIND_ORDER.indexOf(a.note.kind) - KIND_ORDER.indexOf(b.note.kind),
+    );
+
+  async function handleDelete(storedIndex: number) {
+    setError(null);
+    try {
+      const { notes: remaining, deleted } = await deleteProfileNote(cacheKey, storedIndex);
+      onNotesChange(remaining);
+      setRemoved(deleted);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove the note");
+      setState("error");
+    }
+  }
 
   async function handleAdd() {
     if (!text.trim()) return;
@@ -55,6 +74,7 @@ export default function CandidateNotes({
     try {
       onNotesChange(await addProfileNote(cacheKey, text.trim()));
       setText("");
+      setRemoved(null);
       setState("idle");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save your feedback");
@@ -76,15 +96,24 @@ export default function CandidateNotes({
         log. It applies to your next run, so nothing already evaluated changes.
       </p>
 
-      {sorted.length === 0 ? (
+      {removed && (
+        <p className="mt-2 rounded bg-gray-50 px-2 py-1 text-xs text-gray-500">
+          Removed: &ldquo;{removed}&rdquo;. Add it back below if that was a mistake.
+        </p>
+      )}
+
+      {ordered.length === 0 ? (
         <p className="mt-2 text-xs text-gray-400">
           Nothing yet. Add something below, or use &ldquo;Not a fit?&rdquo; and
           &ldquo;Disagree with this?&rdquo; on a result to correct a specific job.
         </p>
       ) : (
         <ul className="mt-2 space-y-1.5">
-          {sorted.map((n, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs text-gray-700">
+          {ordered.map(({ note: n, storedIndex }) => (
+            <li
+              key={storedIndex}
+              className="flex items-start gap-2 text-xs text-gray-700"
+            >
               <span
                 className={`shrink-0 rounded px-1.5 py-0.5 font-medium ${
                   KIND_STYLE[n.kind] ?? "bg-gray-100 text-gray-700"
@@ -92,12 +121,22 @@ export default function CandidateNotes({
               >
                 {KIND_LABEL[n.kind] ?? n.kind}
               </span>
-              <span>
+              <span className="flex-1">
                 {n.note}
                 {n.source ? (
                   <span className="ml-1 text-gray-400">({n.source})</span>
                 ) : null}
               </span>
+              <button
+                type="button"
+                aria-label={`Remove note: ${n.note}`}
+                title="Remove this note"
+                disabled={disabled}
+                onClick={() => handleDelete(storedIndex)}
+                className="shrink-0 px-1 text-gray-400 hover:text-gray-800 disabled:opacity-50"
+              >
+                ×
+              </button>
             </li>
           ))}
         </ul>

@@ -371,6 +371,53 @@ def test_profiles_listing_exposes_notes(monkeypatch: pytest.MonkeyPatch) -> None
     assert body[0]["notes"] == [note.model_dump()]
 
 
+def test_delete_profile_note_removes_by_stored_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = [
+        CandidateNote(note="first", kind="context", source="s"),
+        CandidateNote(note="second", kind="dealbreaker", source="s"),
+        CandidateNote(note="third", kind="preference", source="s"),
+    ]
+    stored = _stored_profile("ck-1", notes)
+    monkeypatch.setattr(server, "get_profile", lambda key: stored if key == "ck-1" else None)
+    saved: dict[str, Any] = {}
+    monkeypatch.setattr(server, "put_profile", lambda rec: saved.__setitem__("record", rec))
+
+    resp = client.delete("/api/profiles/ck-1/notes/1")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == "second"
+    assert [n["note"] for n in resp.json()["notes"]] == ["first", "third"]
+    assert [n.note for n in saved["record"].notes] == ["first", "third"]
+
+
+def test_delete_profile_note_does_not_redistill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deletion is the user overruling the model, so the model does not get a vote.
+
+    Re-distilling on delete could reword the survivors or argue the note back in, and
+    would burn an LLM call to do it.
+    """
+    stored = _stored_profile("ck-1", [CandidateNote(note="only", kind="context", source="s")])
+    monkeypatch.setattr(server, "get_profile", lambda key: stored)
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+    called = {"n": 0}
+    monkeypatch.setattr(server, "distill_notes", lambda *a: called.__setitem__("n", called["n"] + 1))
+
+    assert client.delete("/api/profiles/ck-1/notes/0").status_code == 200
+    assert called["n"] == 0
+
+
+def test_delete_profile_note_out_of_range_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    stored = _stored_profile("ck-1", [CandidateNote(note="only", kind="context", source="s")])
+    monkeypatch.setattr(server, "get_profile", lambda key: stored)
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+    assert client.delete("/api/profiles/ck-1/notes/5").status_code == 404
+    assert client.delete("/api/profiles/ck-1/notes/-1").status_code == 404
+
+
+def test_delete_profile_note_unknown_profile_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "get_profile", lambda key: None)
+    assert client.delete("/api/profiles/nope/notes/0").status_code == 404
+
+
 def test_feedback_unknown_run_404() -> None:
     resp = client.post(
         "/api/feedback", data={"run_id": str(uuid.uuid4()), "job_id": "job-q", "text": "x"}

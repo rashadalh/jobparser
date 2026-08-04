@@ -154,3 +154,8 @@ The list is already a summary — the server re-distills the whole thing on ever
 submission — so `onNotesChange` REPLACES local state with the server's returned list
 rather than appending to it. Appending would show a note twice when the distiller merged
 it into an existing one, and would hide the case where the list legitimately shrinks.
+
+The panel sorts dealbreakers first, so display order is NOT storage order. Each row
+carries the note's stored index through the sort and sends that to the delete endpoint.
+Sending the display index would delete a different note than the one whose × was clicked,
+silently and unrecoverably.

@@ -361,6 +361,29 @@ def add_profile_note(cache_key: str, text: str = Form(...)) -> dict[str, Any]:
     return {"notes": [n.model_dump() for n in notes]}
 
 
+@app.delete("/api/profiles/{cache_key}/notes/{index}")
+def delete_profile_note(cache_key: str, index: int) -> dict[str, Any]:
+    """Remove one note by its position in the STORED list.
+
+    Deliberately does NOT re-distill: deletion is the user overruling the model, so
+    running the list back through the LLM could reword the survivors or argue the note
+    back in. Drop it and save, nothing else.
+
+    ``index`` is the index in ``stored.notes``, NOT in whatever order the UI displays
+    (the panel sorts dealbreakers first). Returns the remaining list plus the deleted
+    text, so a client that somehow sent a stale index can see what actually went.
+    """
+    stored = get_profile(cache_key)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="profile not found")
+    if not 0 <= index < len(stored.notes):
+        raise HTTPException(status_code=404, detail="note not found")
+    deleted = stored.notes[index]
+    remaining = [n for i, n in enumerate(stored.notes) if i != index]
+    put_profile(stored.model_copy(update={"notes": remaining, "updated_at": now_iso()}))
+    return {"notes": [n.model_dump() for n in remaining], "deleted": deleted.note}
+
+
 @app.post("/api/feedback")
 def submit_feedback(
     run_id: str = Form(...),

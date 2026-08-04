@@ -963,6 +963,11 @@ evidence**, so a skill asserted there can satisfy a required skill the resume om
 fit_judge). That is what makes a false-negative correction actually change the next
 verdict rather than just being recorded.
 
+`DELETE /api/profiles/{cache_key}/notes/{index}` removes one note by its index in the
+STORED list. It does NOT re-distill: deletion is the user overruling the model, and
+running the survivors back through the LLM could reword them or argue the note back in.
+The response returns the remaining list plus the deleted text.
+
 `POST /api/profiles/{cache_key}/notes` adds feedback with NO job attached ("I won't
 relocate", "the 2019 gap was contract work"), for the large class of corrections that
 have no verdict to hang on. Same distillation, `job_context` null. `GET /api/profiles`

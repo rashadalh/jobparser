@@ -117,3 +117,17 @@ export async function addProfileNote(
   }
   return (await r.json()).notes;
 }
+
+// Remove one note by its index in the STORED list (not the panel's display order).
+// Returns the remaining notes; deletion is deterministic, with no re-distillation.
+export async function deleteProfileNote(
+  cacheKey: string,
+  storedIndex: number,
+): Promise<{ notes: CandidateNote[]; deleted: string }> {
+  const r = await fetch(
+    `${BASE}/api/profiles/${cacheKey}/notes/${storedIndex}`,
+    { method: "DELETE" },
+  );
+  if (!r.ok) throw new Error(`removing the note failed: ${r.status}`);
+  return r.json();
+}
