@@ -5,6 +5,7 @@ import type {
   ScreenedJob,
 } from "@/lib/types";
 import Pills from "@/components/Pills";
+import FeedbackForm from "@/components/FeedbackForm";
 
 // Plain-language explanation of each pipeline stage a job can fail at.
 const STAGE_EXPLAINER: Record<string, string> = {
@@ -93,8 +94,11 @@ function ScreenedSection({
   );
 }
 
-/** A rejected job — the judge DID evaluate it; show its full reasoning. */
-function RejectedItem({ job }: { job: EvaluatedJob }) {
+/** A rejected job — the judge DID evaluate it; show its full reasoning, and let the
+ *  candidate push back on it. A rejection is a judgment call over an imperfect resume
+ *  summary, so it can be wrong in the candidate's favour just as a match can be wrong
+ *  against them; `runId` is threaded down purely to make that possible. */
+function RejectedItem({ job, runId }: { job: EvaluatedJob; runId: string }) {
   const j = job.judgment;
   return (
     <details
@@ -158,6 +162,17 @@ function RejectedItem({ job }: { job: EvaluatedJob }) {
         <div className="mt-3">
           <JobLink url={job.final_url} />
         </div>
+
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <FeedbackForm
+            runId={runId}
+            jobId={job.job_id}
+            openLabel="Disagree with this?"
+            prompt="Why do you think you're a fit for this job?"
+            placeholder="e.g. I led Kubernetes migrations at Acme — my resume only lists Docker"
+            doneText="Noted — your next run for this resume will take this into account."
+          />
+        </div>
       </div>
     </details>
   );
@@ -213,11 +228,13 @@ export default function FailuresPanel({
   rejected,
   errors,
   screened,
+  runId,
 }: {
   failures: EvaluatedJob[];
   rejected: EvaluatedJob[];
   errors: ErrorRecord[];
   screened: ScreenedJob[];
+  runId: string;
 }) {
   // Correlate a failed job with its per-job ErrorRecord (code + message) by job_id.
   const errByJob = new Map<string, ErrorRecord>();
@@ -256,7 +273,7 @@ export default function FailuresPanel({
           <ul className="mt-2 space-y-2">
             {rejected.map((r) => (
               <li key={r.job_id}>
-                <RejectedItem job={r} />
+                <RejectedItem job={r} runId={runId} />
               </li>
             ))}
           </ul>

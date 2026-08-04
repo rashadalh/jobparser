@@ -264,6 +264,7 @@ export default function Home() {
           rejected={run.rejected}
           errors={run.errors}
           screened={run.screened_out ?? []}
+          runId={run.run_id}
         />
       )}
     </Shell>

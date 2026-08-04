@@ -127,3 +127,20 @@ Poll loop: `setInterval(getRun, POLL_INTERVAL_MS)`, stop when
   failures appear only in `FailuresPanel`, never the main feed.
 - No hydration warnings in the console (client-only state is `mounted`-gated).
 - This is the surface that satisfies the definition of done (SPEC §7.5, Tier-3).
+
+## Feedback affordances
+
+`components/FeedbackForm.tsx` is the single implementation of the "the judge got this
+wrong" flow. Two call sites, differing only in copy:
+
+| Where | Opens with | Records |
+|---|---|---|
+| `JobCard` (qualified) | "Not a fit?" | a false positive |
+| `RejectedItem` (audit panel) | "Disagree with this?" | a false negative |
+
+Both need `runId`, which is why `FailuresPanel` takes one and threads it to
+`RejectedItem`. The server decides which correction it is from the job's bucket — the
+client does not send a direction, so the two forms cannot disagree with the backend about
+what they mean.
+
+`FailedItem` deliberately has no form: there is no judgment to push back on.

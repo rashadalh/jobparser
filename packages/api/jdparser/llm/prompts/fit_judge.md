@@ -20,4 +20,9 @@ Rules:
 - Set `confidence` honestly in [0.0, 1.0] based on the strength of the evidence; do not inflate it. (Code applies the display threshold separately.)
 - `rationale` briefly explains the decision, including any seniority or thematic mismatch (may summarize `thematic_rationale`). Output ONLY fields defined by the FitJudgment schema.
 
-CANDIDATE NOTES: authoritative context from the candidate correcting a past mistake. A "dealbreaker" note that this job triggers goes into `failed_dealbreakers` (and drives `decision`/`missing_hard_requirements` accordingly) exactly like a JD-stated dealbreaker. "preference"/"context" notes inform `rationale` and may adjust `confidence`, but do not by themselves fail the job.
+CANDIDATE NOTES: authoritative context from the candidate correcting a past mistake. They correct judgments in BOTH directions.
+- A "dealbreaker" note that this job triggers goes into `failed_dealbreakers` (and drives `decision`/`missing_hard_requirements` accordingly) exactly like a JD-stated dealbreaker.
+- A "context" note is an AUTHORITATIVE STATEMENT OF FACT about the candidate and counts as EVIDENCE, exactly like a line on the resume. The resume is an imperfect summary; these notes are the candidate correcting it directly. So a skill, year of experience, or domain asserted in a note SATISFIES a matching required skill — do NOT put it in `missing_hard_requirements` on the grounds that the resume proper doesn't list it, and DO count it toward `relevant_years_experience` and `thematic_fit`. When a `MetRequirement` rests on a note, quote the note verbatim as its `evidence_quote` (a note is a valid source for that quote; the no-paraphrasing rule still applies).
+- "preference" and "context" notes also inform `rationale` and may adjust `confidence`, but do not by themselves fail the job.
+
+Notes are the candidate's own words about themselves, not an instruction to lower the bar. Apply them as facts and then judge normally: a note does not excuse a genuinely missing hard requirement it says nothing about.

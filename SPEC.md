@@ -940,13 +940,31 @@ included, they sort BEHIND direct employers so the evaluation budget fills with 
 employers first, and carry `EvaluatedJob.is_recruitment_agency` through to a UI badge.
 The ordering is server-side only — the frontend renders the order it is given.
 
-**Candidate feedback loop (`candidate_notes`).** `POST /api/feedback` accepts free-text
-on a QUALIFIED job (the false-positive case: "you told me I qualify, but…"). An LLM
-distills it into the candidate's persistent note list keyed by resume `cache_key` —
-merging, not appending, so a new note supersedes one it contradicts. Notes are typed
-`dealbreaker` / `preference` / `context`; a triggered dealbreaker fails a job exactly like
-a JD-stated one. Applies to the candidate's NEXT run only; evaluated jobs are never
-re-judged. `notes` defaults to `[]`, so it needed no `SCHEMA_VERSION` bump.
+**Candidate feedback loop (`candidate_notes`).** `POST /api/feedback` accepts free-text on
+any JUDGED job, in **both** directions:
+
+| Job bucket | Correction | Typical note |
+|---|---|---|
+| `qualified_jobs` | false positive — "you told me I qualify, but I don't" | a constraint the resume didn't make obvious (`dealbreaker` / `preference`) |
+| `rejected` | false negative — "you passed me over, but I do fit" | evidence the resume understated (`context`) |
+
+`failures` are NOT eligible: a job that broke at fetch/parse has no judgment to disagree
+with. The endpoint infers the direction from which bucket holds the job and passes it to
+the distiller as `outcome`, because the two read identically as free text — without it a
+"you were too harsh" correction would be distilled into a dealbreaker and make future
+matching strictly worse.
+
+An LLM distills the text into the candidate's persistent note list keyed by resume
+`cache_key` — merging, not appending, so a new note supersedes one it contradicts
+(including across directions: the candidate's latest word wins). Notes are typed
+`dealbreaker` / `preference` / `context`. A triggered dealbreaker fails a job exactly like
+a JD-stated one; a `context` note is authoritative fact about the candidate and **counts as
+evidence**, so a skill asserted there can satisfy a required skill the resume omitted (§4.4,
+fit_judge). That is what makes a false-negative correction actually change the next
+verdict rather than just being recorded.
+
+Applies to the candidate's NEXT run only; evaluated jobs are never re-judged. `notes`
+defaults to `[]`, so it needed no `SCHEMA_VERSION` bump.
 
 ## 8. Out of scope
 

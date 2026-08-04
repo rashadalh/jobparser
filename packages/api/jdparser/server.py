@@ -339,12 +339,18 @@ def submit_feedback(
     job_id: str = Form(...),
     text: str = Form(...),
 ) -> dict[str, Any]:
-    """Capture user feedback on a QUALIFIED job as a candidate note (keyed by the
-    resume's ``cache_key``), distilled into the candidate's existing note list.
+    """Capture user feedback on a JUDGED job as a candidate note (keyed by the resume's
+    ``cache_key``), distilled into the candidate's existing note list.
 
-    Only qualified jobs are eligible (the false-positive case this feature targets —
-    a rejected/failed job has no "wrongly told me I qualify" to correct). Applies to
-    the candidate's NEXT run only; jobs already evaluated are never re-judged.
+    Works in both directions, because the judge can be wrong either way:
+      - a **qualified** job -> a false positive ("you said I qualify, but I don't"),
+      - a **rejected** job  -> a false negative ("you passed me over, but I do fit").
+    The distiller is told which via ``outcome``; a false negative usually SUPPLIES
+    evidence the resume understated, rather than adding a constraint.
+
+    ``failures`` are deliberately not eligible: a job that broke at fetch/parse has no
+    judgment to disagree with. Applies to the candidate's NEXT run only; jobs already
+    evaluated are never re-judged.
     """
     run = get_run(run_id)
     if run is None:
@@ -354,13 +360,21 @@ def submit_feedback(
     stored = get_profile(run.resume_cache_key)
     if stored is None:
         raise HTTPException(status_code=404, detail="candidate profile not found")
+
+    outcome = "qualified"
     job = next((j for j in run.qualified_jobs if j.get("job_id") == job_id), None)
     if job is None:
-        raise HTTPException(status_code=404, detail="job not found among this run's qualified jobs")
+        outcome = "rejected"
+        job = next((j for j in run.rejected if j.get("job_id") == job_id), None)
+    if job is None:
+        raise HTTPException(
+            status_code=404, detail="job not found among this run's judged jobs"
+        )
     job_context = {
         "title": job.get("title"),
         "requirements": job.get("requirements"),
         "rationale": (job.get("judgment") or {}).get("rationale"),
+        "outcome": outcome,  # which way the judge went -> which correction this is
     }
     try:
         notes = distill_notes(stored.notes, job_context, text)

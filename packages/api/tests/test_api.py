@@ -328,13 +328,69 @@ def test_feedback_run_without_cache_key_400(runs_cleanup: list[str]) -> None:
     assert resp.status_code == 400
 
 
+def test_feedback_on_rejected_job_records_a_false_negative(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """The judge can be wrong in the candidate's favour too.
+
+    "You passed me over but I do fit" is as real a correction as "you said I qualify but
+    I don't", and it is the ONLY way a candidate can supply evidence their resume
+    understated. `outcome` tells the distiller which direction it is recording — without
+    it, a false-negative correction reads exactly like a false-positive one and the
+    distiller would write a dealbreaker that makes future matching strictly worse.
+    """
+    run_id = _post_completed_run(monkeypatch, runs_cleanup)
+    monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("fake-cache-key"))
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+
+    seen: dict[str, Any] = {}
+
+    def _distill(existing: Any, ctx: dict[str, Any], text: str) -> list[CandidateNote]:
+        seen["ctx"] = ctx
+        return [CandidateNote(note="Has production Kubernetes experience", kind="context", source="s")]
+
+    monkeypatch.setattr(server, "distill_notes", _distill)
+
+    # job-r is in `rejected` (status "uncertain" -> excluded from qualified_jobs)
+    resp = client.post(
+        "/api/feedback",
+        data={"run_id": run_id, "job_id": "job-r", "text": "I ran K8s in prod at Acme"},
+    )
+    assert resp.status_code == 200
+    assert seen["ctx"]["outcome"] == "rejected"
+    assert resp.json()["notes"][0]["kind"] == "context"
+
+
+def test_feedback_on_qualified_job_is_marked_as_such(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """The pre-existing direction still reports itself correctly."""
+    run_id = _post_completed_run(monkeypatch, runs_cleanup)
+    monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("fake-cache-key"))
+    monkeypatch.setattr(server, "put_profile", lambda rec: None)
+
+    seen: dict[str, Any] = {}
+
+    def _distill(existing: Any, ctx: dict[str, Any], text: str) -> list[CandidateNote]:
+        seen["ctx"] = ctx
+        return []
+
+    monkeypatch.setattr(server, "distill_notes", _distill)
+    resp = client.post(
+        "/api/feedback", data={"run_id": run_id, "job_id": "job-q", "text": "no clearance"}
+    )
+    assert resp.status_code == 200
+    assert seen["ctx"]["outcome"] == "qualified"
+
+
 def test_feedback_job_not_among_qualified_404(
     monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
 ) -> None:
     run_id = _post_completed_run(monkeypatch, runs_cleanup)
     monkeypatch.setattr(server, "get_profile", lambda key: _stored_profile("fake-cache-key"))
 
-    # job-f is a FAILED job (in `failures`, not `qualified_jobs`) — out of scope by design
+    # job-f is a FAILED job — it broke before/at evaluation, so there is no judgment to
+    # disagree with. Still out of scope now that `rejected` is eligible.
     resp = client.post(
         "/api/feedback", data={"run_id": run_id, "job_id": "job-f", "text": "not a fit"}
     )
