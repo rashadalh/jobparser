@@ -11,11 +11,24 @@ import httpx
 import pytest
 import respx
 
+from jdparser.jobsource.adzuna import client as client_mod
 from jdparser.jobsource.adzuna.client import _params, _to_job, run_search_plan, search
-from jdparser.config import ADZUNA_BASE_URL, ADZUNA_COUNTRY, JDParserError
+from jdparser.config import ADZUNA_BASE_URL, ADZUNA_COUNTRY, HTTP_MAX_RETRIES, JDParserError
 from jdparser.llm.schemas import AdzunaQuery
 
 _SEARCH_BASE = f"{ADZUNA_BASE_URL}/jobs/{ADZUNA_COUNTRY}/search"
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record retry backoffs instead of serving them.
+
+    Autouse because several tests below drive `search` into its retry loop, and real
+    backoff would put seconds of dead wall-clock into the suite for nothing.
+    """
+    slept: list[float] = []
+    monkeypatch.setattr(client_mod.time, "sleep", slept.append)
+    return slept
 
 
 # --- _params (pure) ----------------------------------------------------------
@@ -156,6 +169,136 @@ def test_search_500_raises_adzuna_http() -> None:
     with pytest.raises(JDParserError) as ei:
         search(AdzunaQuery(what="x"), page=1)
     assert ei.value.code == "ADZUNA_HTTP"
+
+
+# --- transient-failure retry -------------------------------------------------
+@respx.mock
+def test_transient_503_is_retried_and_succeeds(_no_real_sleep: list[float]) -> None:
+    """A 503 blip must not fail the query.
+
+    Reported from a live run: Adzuna's load balancer served its "Uh oh, something isn't
+    right" page and EVERY query in the plan failed on its first and only attempt, giving
+    a run with zero jobs. `HTTPTransport(retries=)` looked like it covered this and does
+    not — it retries connection errors only (see `test_transport_retries_do_not_cover_5xx`).
+    """
+    route = respx.get(url__startswith=_SEARCH_BASE).mock(
+        side_effect=[
+            httpx.Response(503, html="<!DOCTYPE html><html>Uh oh</html>"),
+            httpx.Response(503, html="<!DOCTYPE html><html>Uh oh</html>"),
+            httpx.Response(200, json={"results": [{"id": "1", "title": "Engineer"}]}),
+        ]
+    )
+    out = search(AdzunaQuery(what="x"), page=1)
+
+    assert route.call_count == 3
+    assert [j.id for j in out] == ["1"]
+    assert _no_real_sleep == [0.5, 1.0]  # exponential backoff between attempts
+
+
+@respx.mock
+def test_retries_are_bounded_then_raise(_no_real_sleep: list[float]) -> None:
+    """A sustained outage gives up after HTTP_MAX_RETRIES rather than stalling the run."""
+    route = respx.get(url__startswith=_SEARCH_BASE).mock(
+        return_value=httpx.Response(503, text="down")
+    )
+    with pytest.raises(JDParserError) as ei:
+        search(AdzunaQuery(what="x"), page=1)
+
+    assert ei.value.code == "ADZUNA_HTTP"
+    assert route.call_count == HTTP_MAX_RETRIES + 1   # initial attempt + retries
+    assert len(_no_real_sleep) == HTTP_MAX_RETRIES
+
+
+@respx.mock
+def test_client_error_is_not_retried(_no_real_sleep: list[float]) -> None:
+    """400s are our bug, not a blip — retrying only burns the run's time budget."""
+    route = respx.get(url__startswith=_SEARCH_BASE).mock(return_value=httpx.Response(400))
+    with pytest.raises(JDParserError):
+        search(AdzunaQuery(what="x"), page=1)
+    assert route.call_count == 1
+    assert _no_real_sleep == []
+
+
+@respx.mock
+def test_auth_failure_is_not_retried(_no_real_sleep: list[float]) -> None:
+    """Bad credentials will still be bad on the third attempt."""
+    route = respx.get(url__startswith=_SEARCH_BASE).mock(return_value=httpx.Response(401))
+    with pytest.raises(JDParserError) as ei:
+        search(AdzunaQuery(what="x"), page=1)
+    assert ei.value.code == "ADZUNA_AUTH"
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_retry_after_header_is_honored_when_sane(_no_real_sleep: list[float]) -> None:
+    respx.get(url__startswith=_SEARCH_BASE).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "2"}, text="slow down"),
+            httpx.Response(200, json={"results": []}),
+        ]
+    )
+    search(AdzunaQuery(what="x"), page=1)
+    assert _no_real_sleep == [2.0]
+
+
+@respx.mock
+def test_absurd_retry_after_falls_back_to_backoff(_no_real_sleep: list[float]) -> None:
+    """A long Retry-After would stall the run past the frontend's poll timeout — at which
+    point waiting is worse than failing this query and letting the others through."""
+    respx.get(url__startswith=_SEARCH_BASE).mock(
+        side_effect=[
+            httpx.Response(503, headers={"Retry-After": "3600"}, text="down"),
+            httpx.Response(200, json={"results": []}),
+        ]
+    )
+    search(AdzunaQuery(what="x"), page=1)
+    assert _no_real_sleep == [0.5]  # backoff, not the hour Adzuna asked for
+
+
+@respx.mock
+def test_http_error_page_is_not_dumped_into_the_message(_no_real_sleep: list[float]) -> None:
+    """The reported error read `<!DOCTYPE html> <html> <!-- This file is managed by Chef -->`
+    — 200 characters of markup telling the user nothing. Summarize HTML, don't paste it."""
+    respx.get(url__startswith=_SEARCH_BASE).mock(
+        return_value=httpx.Response(
+            503,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+            text="<!DOCTYPE html><html><head><title>Uh oh, something isn't right</title></head></html>",
+        )
+    )
+    with pytest.raises(JDParserError) as ei:
+        search(AdzunaQuery(what="x"), page=1)
+
+    assert "<!DOCTYPE" not in ei.value.message
+    assert "<html" not in ei.value.message
+    assert "HTML error page" in ei.value.message
+    assert ei.value.message.startswith("503:")
+
+
+@respx.mock
+def test_json_error_body_is_still_shown(_no_real_sleep: list[float]) -> None:
+    """Adzuna's JSON errors are actionable — keep showing those."""
+    respx.get(url__startswith=_SEARCH_BASE).mock(
+        return_value=httpx.Response(400, json={"exception": "AUTH_FAIL", "doc": "bad app_id"})
+    )
+    with pytest.raises(JDParserError) as ei:
+        search(AdzunaQuery(what="x"), page=1)
+    assert "AUTH_FAIL" in ei.value.message
+
+
+def test_transport_retries_do_not_cover_5xx() -> None:
+    """Pins the httpx behavior the retry loop exists to work around.
+
+    `HTTPTransport(retries=)` retries CONNECTION errors only. If a future httpx version
+    ever makes it retry error responses too, this test fails and the loop above becomes
+    redundant — which is worth being told about rather than discovering by accident.
+    """
+    with respx.mock:
+        route = respx.get("https://x.test/").mock(return_value=httpx.Response(503))
+        with httpx.Client(transport=httpx.HTTPTransport(retries=5)) as c:
+            r = c.get("https://x.test/")
+    assert r.status_code == 503
+    assert route.call_count == 1  # not 6
 
 
 @respx.mock

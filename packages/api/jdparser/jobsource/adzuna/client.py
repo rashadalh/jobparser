@@ -8,6 +8,7 @@ owns the continue-on-partial-failure policy (IMPLEMENTATION_ADZUNA.md — canoni
 downstream takes ``Job`` (see ``jdparser/jobs.py``).
 """
 
+import time
 from typing import Any
 
 import httpx
@@ -82,19 +83,73 @@ def _to_job(raw: dict[str, Any]) -> Job:
     )
 
 
+# Transient upstream failures worth another attempt. 429 is rate limiting; 5xx here are
+# Adzuna's load balancer, not our request — the same query usually succeeds moments later.
+# Everything else (400s) is our problem and retrying just wastes the run's time.
+_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def _retry_after(response: httpx.Response, attempt: int) -> float:
+    """Seconds to wait: the server's `Retry-After` if it sent a sane one, else backoff.
+
+    Capped — Adzuna has been observed sending long `Retry-After` values that would stall
+    the run past the frontend's poll timeout, at which point waiting is worse than failing
+    the query and letting the other queries through.
+    """
+    header: str = response.headers.get("Retry-After", "")
+    try:
+        seconds = float(header)
+    except ValueError:
+        seconds = 0.0  # http-date form, or junk — fall through to backoff
+    if 0 < seconds <= 10:
+        return seconds
+    return 0.5 * (2.0**attempt)  # 0.5s, 1s, 2s, … (float base: mypy types int**int as Any)
+
+
+def _error_body(response: httpx.Response) -> str:
+    """A short, useful error message — never a slab of HTML.
+
+    A 503 from Adzuna returns their branded error PAGE, so the old `r.text[:200]` put
+    `<!DOCTYPE html> <html> <!-- This file is managed by Chef -->…` in the run's audit
+    panel: 200 characters that tell the user nothing. Their JSON errors are worth showing;
+    their HTML is not.
+    """
+    content_type = response.headers.get("Content-Type", "")
+    if "html" in content_type.lower() or response.text.lstrip()[:9].lower() == "<!doctype":
+        return f"upstream returned an HTML error page ({len(response.text)} bytes)"
+    return response.text[:200].strip() or "(empty response body)"
+
+
 def search(query: AdzunaQuery, page: int) -> list[Job]:
     """One Adzuna API page (``page`` is a 1-based path segment) → normalized ``Job``s.
 
     401/403 → ``ADZUNA_AUTH``; any other status ≥ 400 → ``ADZUNA_HTTP``.
+
+    Transient statuses (`_RETRY_STATUSES`) are retried up to ``HTTP_MAX_RETRIES`` times
+    before giving up. This is a real request loop rather than the transport's `retries=`
+    argument, which retries **connection** errors ONLY and silently does nothing for an
+    HTTP error response — verified: `HTTPTransport(retries=5)` against a 503 issues
+    exactly one request. A single blip in Adzuna's load balancer used to fail every query
+    in the plan on its first attempt and return a run with zero jobs.
     """
     url = f"{ADZUNA_BASE_URL}/jobs/{ADZUNA_COUNTRY}/search/{page}"
+    params = _params(query)
+    # retries= still earns its place here: it covers connection-level failures, which the
+    # loop below never sees (httpx raises rather than returning a response).
     transport = httpx.HTTPTransport(retries=HTTP_MAX_RETRIES)
     with httpx.Client(timeout=FETCH_TIMEOUT_S, transport=transport) as c:
-        r = c.get(url, params=_params(query))
+        for attempt in range(HTTP_MAX_RETRIES + 1):
+            r = c.get(url, params=params)
+            if r.status_code not in _RETRY_STATUSES or attempt == HTTP_MAX_RETRIES:
+                break
+            time.sleep(_retry_after(r, attempt))
+
     if r.status_code in (401, 403):
-        raise JDParserError(code="ADZUNA_AUTH", message=r.text[:200])
+        raise JDParserError(code="ADZUNA_AUTH", message=_error_body(r))
     if r.status_code >= 400:
-        raise JDParserError(code="ADZUNA_HTTP", message=f"{r.status_code}: {r.text[:200]}")
+        raise JDParserError(
+            code="ADZUNA_HTTP", message=f"{r.status_code}: {_error_body(r)}"
+        )
     # reason: heterogeneous Adzuna JSON passthrough (SPEC §3.8.1)
     results: list[dict[str, Any]] = r.json().get("results", [])
     return [_to_job(raw) for raw in results]
@@ -105,6 +160,11 @@ def run_search_plan(plan: list[AdzunaQuery]) -> list[Job]:
 
     Raises on the first failure (the graph node decides whether to continue on
     partial failure — IMPLEMENTATION_ADZUNA.md). No try/except here by design.
+
+    ponytail: retries are per-request, so a TOTAL Adzuna outage pays the backoff on every
+    query x page (~8 x 5 requests) before the run gives up — bounded, and well inside the
+    frontend's 300s poll timeout, but wasteful. Add a circuit breaker (stop retrying after
+    N consecutive failures across the plan) if full outages stop being rare.
     """
     out: list[Job] = []
     for q in plan:
