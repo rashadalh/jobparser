@@ -3,14 +3,20 @@
 > Table of contents + shared style guide. Detail lives in `IMPLEMENTATION_<AREA>.md`.
 > Phases and exit-checks live in `BUILD.md`. Contracts live in `SPEC.md`.
 
+> **The code is authoritative.** These docs quote implementation inline to explain intent,
+> and quoted snippets drift — several here described `file_hash`, `text_hash`, and
+> `resume_profile_id` for months after those fields were deleted. When a snippet and the
+> source disagree, the source wins; fix the snippet. Prefer explaining WHY a thing is
+> shaped the way it is over reproducing WHAT it says, which the reader can just go read.
+
 ## Milestones
 
 | Milestone | What | Detail doc |
 |---|---|---|
 | **M0 — Foundations** | Monorepo scaffold (`packages/api`, `packages/web`), pinned deps installed, Playwright browser installed, `.env.example`, empty `data/` dirs, `config.py` with all SPEC §6 constants. | this doc (§Foundations) |
 | **M1 — Cache & resume text** | `resume/extract_text.py`, `cache/fingerprint.py`, `cache/store.py`. Pure logic, unit-tested. | `IMPLEMENTATION_CACHE.md` |
-| **M2 — LLM agents** | `llm/schemas.py` (all Pydantic models), `llm/client.py` (routing), the 4 agent fns. | `IMPLEMENTATION_LLM.md` |
-| **M3 — Adzuna** | `adzuna/client.py`, `adzuna/dedupe.py`. | `IMPLEMENTATION_ADZUNA.md` |
+| **M2 — LLM agents** | `llm/schemas.py` (all Pydantic models), `llm/client.py` (routing), the 6 agent fns. | `IMPLEMENTATION_LLM.md` |
+| **M3 — Adzuna** | `jobsource/adzuna/client.py`, `jobsource/dedupe.py`. | `IMPLEMENTATION_ADZUNA.md` |
 | **M4 — Extraction** | `extract/*` (resolve, fetch+Playwright, jsonld, ats, readable, quality). | `IMPLEMENTATION_EXTRACT.md` |
 | **M5 — Graph** | `graph/state.py`, `graph/nodes.py`, `graph/subgraph.py`, `graph/build.py`; `__main__.py` CLI. | `IMPLEMENTATION_GRAPH.md` |
 | **M6 — API** | `runs/store.py`, `server.py`, background execution. | `IMPLEMENTATION_API.md` |
@@ -160,10 +166,10 @@ ADZUNA_APP_KEY=...
 
 # --- Per-node LLM overrides (all optional; defaults shown, SPEC §6.3) ---
 # <NODE> in {PROFILER, PLANNER, JD_PARSER, JUDGE}
-# LLM_MODEL_PROFILER=z-ai/glm-5.2
-# LLM_MODEL_PLANNER=z-ai/glm-5.2
+# LLM_MODEL_PROFILER=google/gemini-3.1-flash-lite
+# LLM_MODEL_PLANNER=google/gemini-3.1-flash-lite
 # LLM_MODEL_JD_PARSER=google/gemini-3.1-flash-lite
-# LLM_MODEL_JUDGE=z-ai/glm-5.2
+# LLM_MODEL_JUDGE=google/gemini-3.1-flash-lite
 # LLM_TEMP_PROFILER=0.2     LLM_TEMP_PLANNER=0.3     LLM_TEMP_JD_PARSER=0.1     LLM_TEMP_JUDGE=0.2
 # LLM_MAX_TOKENS_PROFILER=8000   LLM_MAX_TOKENS_PLANNER=4000   LLM_MAX_TOKENS_JD_PARSER=6000   LLM_MAX_TOKENS_JUDGE=10000
 # LLM_REASONING_PROFILER=off   LLM_REASONING_PLANNER=off   LLM_REASONING_JD_PARSER=off   LLM_REASONING_JUDGE=low

@@ -311,8 +311,11 @@ def aggregate_matches(state: JobMatchState) -> NodeResult:
     return {"qualified_jobs": qualified}
 
 
-# --- §7: deterministic display gate (copied verbatim from SPEC §7; the bare `dict`
-#     param is rendered as `dict[str, Any]` per the spec's bare-dict rendering rule) -
+# --- §7: deterministic display gate. THE single implementation — SPEC §7 states the
+#     ten conditions normatively as a table and no longer reproduces this source (the
+#     two copies had already drifted). Change a condition here and update that table.
+#     Conditions 3-7 re-derive what `status` already reflects, on purpose: the
+#     redundancy means a stale/incorrect `status` can never leak a job into the feed.
 def is_qualified(ej: dict[str, Any]) -> bool:  # reason: EvaluatedJob.model_dump() payload (SPEC §3.9)
     j = ej.get("judgment")
     return bool(

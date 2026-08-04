@@ -26,7 +26,7 @@ returns `qualified` with confidence ≥ 0.75, backed by cited resume evidence.
   searches → Adzuna search → dedupe → **fan-out job evaluation** → aggregate.
 - Job-evaluation subgraph per job: resolve final URL → fetch (static HTTP, with
   Playwright headless fallback) → extract JD (JSON-LD → ATS parsers → readable
-  text) → parse requirements (Gemini 3.1 Flash Lite) → judge fit (GLM 5.2).
+  text) → parse requirements → judge fit (all Gemini 3.1 Flash Lite).
 - FastAPI service bridging the browser to the graph (start run, poll status/results).
 - Next.js frontend: upload a resume, watch run progress, see qualified job cards
   with cited evidence, plus an audit view of failures.
@@ -35,7 +35,8 @@ returns `qualified` with confidence ≥ 0.75, backed by cited resume evidence.
 
 - Authentication / multi-tenant accounts (a single fixed `local` user).
 - Applying to jobs, saving searches, or any write-back to job boards.
-- Job sources other than Adzuna.
+- A SECOND job source. The `JobSource` seam exists (`jobsource/base.py`) and Adzuna is
+  the only implementation — the abstraction is in place, multi-source is not.
 - A real database (resume cache and run records are JSON flat-files).
 - Push/streaming progress (WebSocket/SSE); the frontend **polls**.
 - Letting the LLM decide which jobs to display — the visible set is produced by
@@ -45,13 +46,13 @@ returns `qualified` with confidence ≥ 0.75, backed by cited resume evidence.
 
 | Surface | Doc | Owns |
 |---|---|---|
-| Orchestration | `IMPLEMENTATION_GRAPH.md` | LangGraph state, top-level nodes, fan-out, evaluation subgraph |
-| LLM agents | `IMPLEMENTATION_LLM.md` | The 4 OpenRouter nodes (GLM 5.2 / Gemini Flash Lite): schemas, prompts, routing, structured output |
-| Job discovery | `IMPLEMENTATION_ADZUNA.md` | Adzuna client, search execution, dedupe |
-| Evidence extraction | `IMPLEMENTATION_EXTRACT.md` | URL resolve, fetch (httpx+Playwright), JSON-LD/ATS/readable, quality checks |
-| Profile cache | `IMPLEMENTATION_CACHE.md` | Fingerprinting, JSON flat-file store, resume text extraction |
-| API service | `IMPLEMENTATION_API.md` | FastAPI run lifecycle, background execution, status/results |
-| Frontend | `IMPLEMENTATION_WEB.md` | Next.js upload, polling, results + audit UI |
+| Orchestration | `docs/IMPLEMENTATION_GRAPH.md` | LangGraph state, top-level nodes, fan-out, evaluation subgraph |
+| LLM agents | `docs/IMPLEMENTATION_LLM.md` | The 6 OpenRouter nodes (all Gemini 3.1 Flash Lite): schemas, prompts, routing, structured output |
+| Job discovery | `docs/IMPLEMENTATION_ADZUNA.md` | Adzuna client, search execution, dedupe |
+| Evidence extraction | `docs/IMPLEMENTATION_EXTRACT.md` | URL resolve, fetch (httpx+Playwright), JSON-LD/ATS/readable, quality checks |
+| Profile cache | `docs/IMPLEMENTATION_CACHE.md` | Fingerprinting, JSON flat-file store, resume text extraction |
+| API service | `docs/IMPLEMENTATION_API.md` | FastAPI run lifecycle, background execution, status/results |
+| Frontend | `docs/IMPLEMENTATION_WEB.md` | Next.js upload, polling, results + audit UI |
 
 ## Definition of done (what a human does to confirm it works)
 

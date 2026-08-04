@@ -52,12 +52,12 @@ from jdparser.llm.schemas import Fingerprint   # Fingerprint lives in schemas.py
 
 
 def compute_fingerprint(file_path: str, text: str) -> Fingerprint:
-    file_hash = hashlib.sha256(open(file_path, "rb").read()).hexdigest()
+    # text_hash stays a local: it builds cache_key but is not itself stored.
     text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     cache_key = hashlib.sha256(
         f"{text_hash}:{PARSER_VERSION}:{SCHEMA_VERSION}".encode("utf-8")
     ).hexdigest()
-    return Fingerprint(file_hash=file_hash, text_hash=text_hash, cache_key=cache_key)
+    return Fingerprint(cache_key=cache_key)
 ```
 
 Invariant: identical text + same parser/schema versions ⇒ identical `cache_key`.
@@ -103,8 +103,9 @@ is atomic, consumer is `load_or_parse_profile`.
 ## Done when
 
 - `tests/test_fingerprint.py`: same text → same `cache_key`; different
-  `PARSER_VERSION` → different `cache_key`; `file_hash` differs for byte-different
-  files with identical text.
+  `PARSER_VERSION` → different `cache_key`. Note the key is content-addressed by TEXT:
+  two byte-different files that extract to identical text share a cache entry, which is
+  the intent (the same resume re-exported should not re-parse).
 - `tests/test_cache_store.py`: `put_profile` then `get_profile` round-trips a
   `StoredResumeProfile` byte-for-byte (Pydantic-equal); overwriting the same key
   replaces atomically; `get_profile` on a missing key returns `None`.

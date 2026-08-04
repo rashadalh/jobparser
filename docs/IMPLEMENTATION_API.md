@@ -72,9 +72,9 @@ def read_run(run_id: str):
 def _execute(run_id: str, resume_path: str):
     update_run(run_id, status="running")
     init = {"run_id": run_id, "user_id": "local", "resume_file_path": resume_path,
-            "resume_text": None, "resume_fingerprint": None, "resume_profile_id": None,
+            "resume_text": None, "resume_fingerprint": None,
             "resume_profile": None, "resume_cache_hit": False, "search_plan": None,
-            "adzuna_results": [], "deduped_jobs": [], "evaluated_jobs": [],
+            "job_results": [], "deduped_jobs": [], "evaluated_jobs": [],
             "qualified_jobs": [], "errors": []}
     try:
         final = _graph.invoke(init, config={
@@ -133,3 +133,12 @@ audit-view copy (SPEC §9).
   - `GET /api/health` → `{"status":"ok"}`.
 - The orchestrator's Tier-3 check (BUILD.md final phase) drives this from a real
   browser, not just TestClient.
+
+## Why `server.py` is not split
+
+At ~370 lines it mixes HTTP routing, graph execution (`_execute`), progress streaming, and
+partitioning results into the audit buckets — and the partitioning is business rule, not
+transport. A split was evaluated during the refactor audit and **declined**: the file is
+cohesive around one pipeline, and it is cited by name throughout `SPEC.md` and this doc, so
+splitting invalidates those references for a currently-aesthetic gain. Revisit past ~500
+lines. See [`REFACTOR_AUDIT.md`](REFACTOR_AUDIT.md) F16.

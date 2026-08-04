@@ -1,8 +1,8 @@
 """OpenRouter client (OpenAI SDK + instructor) + the shared call helpers.
 
-SPEC §6.3 / IMPLEMENTATION_LLM "client.py" + "Canonical call shape". The four LLM
-agents import `_call` from here, so the canonical call shape lives in exactly one
-place. Reasoning depth is steered only via OpenRouter's `reasoning` control passed
+SPEC §6.3 / IMPLEMENTATION_LLM "client.py" + "Canonical call shape". All six LLM
+agents (profiler, planner, jd_parser, judge, screener, feedback) import `_call` from
+here, so the canonical call shape lives in exactly one place. Reasoning depth is steered only via OpenRouter's `reasoning` control passed
 through `extra_body` (no provider-specific `thinking`/`effort` params).
 """
 

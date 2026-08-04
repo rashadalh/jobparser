@@ -1,14 +1,14 @@
 # Resume-Driven Job Matching
 
-> README skeleton — filled in by the M_final polish phase. See `PLAN.md` for the
-> mission and `SPEC.md` for the contract.
+> See `PLAN.md` for the mission, `SPEC.md` for the contract, and `docs/` for the
+> per-area implementation notes.
 
 A web app that takes your resume, finds jobs via Adzuna, extracts each job's full
 description, and shows you **only** the jobs where the description was actually
 extracted and your resume meets the stated requirements (with cited evidence and a
 strict confidence threshold). Orchestrated with LangGraph; semantic work done by
-low-cost open-weight models via OpenRouter (GLM 5.2 for logic, Gemini 3.1 Flash Lite
-for text extraction).
+a low-cost model via OpenRouter (Gemini 3.1 Flash Lite, for both the logic nodes and
+text extraction).
 
 ## Architecture (one line)
 
