@@ -13,7 +13,7 @@ import httpx
 import pytest
 import respx
 
-from jdparser.config import MAX_JD_CHARS, MIN_JD_CHARS
+from jdparser.config import MAX_JD_CHARS, MIN_JD_CHARS, JDParserError
 from jdparser.extract import extract_jd_text
 from jdparser.extract import fetch as fetch_mod
 from jdparser.extract.ats import ats_extract
@@ -174,6 +174,54 @@ def test_fetch_escalates_to_headed_when_headless_render_is_blocked(
     assert calls == [True, False]  # headless first, exactly one headed retry
     assert result.status == 200
     assert "real long job description" in result.html
+
+
+@respx.mock
+def test_headed_retry_failure_keeps_the_headless_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A headed retry that CANNOT RUN must not fail the fetch.
+
+    Observed in a container without Xvfb: the headed launch raises "Missing X server or
+    $DISPLAY", which propagated out and surfaced as FETCH_FAILED — throwing away the
+    usable headless render from step 2. An optional escalation must never take out the
+    required path, so the step-2 result stands and extraction proceeds on it.
+    """
+    url = "https://www.adzuna.com/land/ad/123"
+    respx.get(url).mock(return_value=httpx.Response(403, text="denied"))
+
+    calls: list[bool] = []
+
+    def fake_render(u: str, *, headless: bool = True) -> tuple[str, int, str]:
+        calls.append(headless)
+        if headless:
+            return ("<html>headless got this far</html>", 403, u)
+        raise RuntimeError(
+            "BrowserType.launch: Target page, context or browser has been closed\n"
+            "Missing X server or $DISPLAY"
+        )
+
+    monkeypatch.setattr(fetch_mod, "_render", fake_render)
+    result = fetch(url)  # must NOT raise
+
+    assert calls == [True, False]          # the retry was attempted...
+    assert result.status == 403            # ...and its failure left step 2 intact
+    assert "headless got this far" in result.html
+
+
+@respx.mock
+def test_headless_render_failure_is_still_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Step 2 is required: when the ONLY render fails there is nothing to fall back to."""
+    url = "https://jobs.example.com/x"
+    respx.get(url).mock(return_value=httpx.Response(500))
+
+    def boom(u: str, *, headless: bool = True) -> tuple[str, int, str]:
+        raise RuntimeError("Executable doesn't exist — run `playwright install`")
+
+    monkeypatch.setattr(fetch_mod, "_render", boom)
+    with pytest.raises(JDParserError) as ei:
+        fetch(url)
+    assert ei.value.code == "FETCH_FAILED"
 
 
 @respx.mock
