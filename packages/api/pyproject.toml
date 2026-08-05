@@ -2,6 +2,7 @@
 name = "jdparser"
 version = "1.0.0"
 description = "Resume-driven job matcher API (FastAPI + LangGraph)"
+license = "AGPL-3.0-only"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "langgraph==0.6.11",
