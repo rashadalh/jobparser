@@ -20,7 +20,8 @@ returns what was actually charged, which stays correct when a model's price chan
 when OpenRouter routes to a different upstream provider. A local table would be a second
 source of truth that silently goes stale.
 
-Verified against a live call (2026-08-04, google/gemini-3.1-flash-lite), because all of
+Verified against a live call (2026-08-04, google/gemini-3.1-flash-lite — the logic model at
+the time; the behavior below is OpenRouter's, not the model's), because all of
 the below is provider behavior that unit tests with a fake completion cannot establish:
 
 - `usage.cost` is returned when `usage: {"include": true}` is sent.

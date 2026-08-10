@@ -177,7 +177,7 @@ def parse_requirements(state: JobEvalState) -> NodeResult:
     jd_text = state["jd_text"]
     assert jd_text is not None
     try:
-        req = parse_jd_requirements(jd_text)             # Gemini 3.1 Flash Lite
+        req = parse_jd_requirements(jd_text)             # DeepSeek V4 Flash (latest)
         return {"requirements": req.model_dump()}
     except JDParserError as e:
         return {"result": [_fail(state, "parse", e)]}
@@ -191,7 +191,7 @@ def judge_fit_node(state: JobEvalState) -> NodeResult:
         req = JobRequirements.model_validate(raw_req)
         title = _job(state).title                        # job title is the clearest seniority signal
         notes = [CandidateNote.model_validate(n) for n in state.get("notes", [])]
-        j = judge_fit(profile, req, title, notes)         # gemini-3.1-flash-lite
+        j = judge_fit(profile, req, title, notes)         # deepseek-v4-flash-latest
         return {"judgment": j.model_dump()}
     except JDParserError as e:
         return {"result": [_fail(state, "judge", e)]}

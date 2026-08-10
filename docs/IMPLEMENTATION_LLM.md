@@ -3,16 +3,16 @@
 > Owns all Pydantic schemas and the four LLM nodes. References: SPEC §3.3–§3.8.4,
 > §4.4, §6.3, §6.4. **Provider is OpenRouter** (OpenAI-compatible) accessed via the
 > **OpenAI Python SDK** (`openai`) + **`instructor`** for Pydantic-validated
-> structured output. Models per SPEC §6.3 routing table: **Gemini 3.1 Flash Lite** (`google/gemini-3.1-flash-lite`)
-> for logic, **Gemini 3.1 Flash Lite** (`google/gemini-3.1-flash-lite`) for text
+> structured output. Models per SPEC §6.3 routing table: **DeepSeek V4 Flash (latest)** (`~deepseek/deepseek-v4-flash-latest`)
+> for logic, **DeepSeek V4 Flash (latest)** (`~deepseek/deepseek-v4-flash-latest`) for text
 > extraction.
 
 ## Purpose
 
 Each LLM has one job, one schema, one failure mode (per the overview). Outputs are
 strict JSON validated against Pydantic models by `instructor`, which re-asks the
-model on a validation failure before raising. Logic work → Gemini 3.1 Flash Lite; literal JD text
-extraction → Gemini 3.1 Flash Lite.
+model on a validation failure before raising. Logic work → DeepSeek V4 Flash (latest); literal JD text
+extraction → DeepSeek V4 Flash (latest).
 
 ## Files this area owns
 
@@ -143,7 +143,7 @@ Notes / locked decisions:
 
 ## `resume_profiler.py` — `_call(LLM_NODES["profiler"], …, ResumeProfile, "PROFILE_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite, temp 0.2, `max_tokens` 8000, reasoning off.
+Defaults (env-overridable, SPEC §6.3): DeepSeek V4 Flash (latest), temp 0.2, `max_tokens` 8000, reasoning off.
 
 ```python
 def profile_resume(resume_text: str) -> ResumeProfile
@@ -156,7 +156,7 @@ do not fabricate skills not supported by the text. Truncate `resume_text` to
 
 ## `search_planner.py` — `_call(LLM_NODES["planner"], …, SearchPlan, "PLAN_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite, temp 0.3, `max_tokens` 4000, reasoning off.
+Defaults (env-overridable, SPEC §6.3): DeepSeek V4 Flash (latest), temp 0.3, `max_tokens` 4000, reasoning off.
 
 ```python
 def plan_queries(profile: ResumeProfile) -> list[AdzunaQuery]
@@ -178,7 +178,7 @@ but the prompt should reinforce it. If `queries == []`, the graph node raises
 
 ## `jd_parser.py` — `_call(LLM_NODES["jd_parser"], …, JobRequirements, "PARSE_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite, temp 0.1, `max_tokens` 6000, reasoning off.
+Defaults (env-overridable, SPEC §6.3): DeepSeek V4 Flash (latest), temp 0.1, `max_tokens` 6000, reasoning off.
 
 ```python
 def parse_jd_requirements(jd_text: str) -> JobRequirements
@@ -191,7 +191,7 @@ Truncate `jd_text` to `MAX_JD_CHARS` (60000).
 
 ## `fit_judge.py` — `_call(LLM_NODES["judge"], …, FitJudgment, "JUDGE_INVALID")`
 
-Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite, temp 0.2, `max_tokens` 10000, reasoning
+Defaults (env-overridable, SPEC §6.3): DeepSeek V4 Flash (latest), temp 0.2, `max_tokens` 10000, reasoning
 **medium** (the one node where reasoning earns its keep; its ceiling covers reasoning +
 JSON — bumped from `low`: thematic/functional fit needs more than mechanical skill-list
 matching).
@@ -225,9 +225,9 @@ JSON in the user message.
 - Truncation guard: a faked completion with `finish_reason=="length"` raises
   `JDParserError(code="LLM_TRUNCATED")`, not a `*_INVALID`.
 - A live smoke (gated behind `OPENROUTER_API_KEY`, run in M2 exit-check by the
-  orchestrator, not the unit suite): `profile_resume(sample_text)` (Gemini 3.1 Flash Lite) returns a
+  orchestrator, not the unit suite): `profile_resume(sample_text)` (DeepSeek V4 Flash (latest)) returns a
   valid `ResumeProfile` with ≥1 evidence entry; `parse_jd_requirements(sample_jd)`
-  (Gemini Flash Lite) returns a valid `JobRequirements`; `judge_fit` on a contrived
+  (DeepSeek V4 Flash (latest)) returns a valid `JobRequirements`; `judge_fit` on a contrived
   profile+requirements returns a `FitJudgment` whose `decision` is one of the three
   literals. Assert each call's `response.model` (or the OpenRouter response) reflects
   the routed slug.

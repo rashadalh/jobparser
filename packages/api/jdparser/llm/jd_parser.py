@@ -1,6 +1,6 @@
-"""jd_parser — `parse_jd_requirements` (text extraction, Gemini 3.1 Flash Lite).
+"""jd_parser — `parse_jd_requirements` (text extraction, DeepSeek V4 Flash (latest)).
 
-SPEC §3.5 / §4.4. Defaults (env-overridable, SPEC §6.3): Gemini 3.1 Flash Lite,
+SPEC §3.5 / §4.4. Defaults (env-overridable, SPEC §6.3): DeepSeek V4 Flash (latest),
 temp 0.1, max_tokens 6000, reasoning off. Maps validation failure -> PARSE_INVALID.
 """
 

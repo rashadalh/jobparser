@@ -1,4 +1,4 @@
-"""feedback — `distill_notes` (logic node, gemini-3.1-flash-lite).
+"""feedback — `distill_notes` (logic node, deepseek-v4-flash-latest).
 
 Merges a user's free-text feedback into the candidate's existing note list — either a
 correction on a job the judge got wrong, or something they volunteer about themselves
