@@ -1,6 +1,6 @@
-"""fit_judge — `judge_fit` (logic node, gemini-3.1-flash-lite). SPEC §3.6 / §4.4.
+"""fit_judge — `judge_fit` (logic node, deepseek-v4-flash-latest). SPEC §3.6 / §4.4.
 
-Defaults (env-overridable, SPEC §6.3): gemini-3.1-flash-lite, temp 0.2, max_tokens 10000,
+Defaults (env-overridable, SPEC §6.3): deepseek-v4-flash-latest, temp 0.2, max_tokens 10000,
 reasoning medium (the one node where reasoning earns its keep — bumped from low: plain
 skill/dealbreaker matching missed thematic mismatches, see THEMATIC FIT below). Maps
 validation failure -> JUDGE_INVALID. The displayed-job confidence gate (>= 0.75) is

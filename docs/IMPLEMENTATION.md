@@ -166,10 +166,10 @@ ADZUNA_APP_KEY=...
 
 # --- Per-node LLM overrides (all optional; defaults shown, SPEC §6.3) ---
 # <NODE> in {PROFILER, PLANNER, JD_PARSER, JUDGE}
-# LLM_MODEL_PROFILER=google/gemini-3.1-flash-lite
-# LLM_MODEL_PLANNER=google/gemini-3.1-flash-lite
-# LLM_MODEL_JD_PARSER=google/gemini-3.1-flash-lite
-# LLM_MODEL_JUDGE=google/gemini-3.1-flash-lite
+# LLM_MODEL_PROFILER=~deepseek/deepseek-v4-flash-latest
+# LLM_MODEL_PLANNER=~deepseek/deepseek-v4-flash-latest
+# LLM_MODEL_JD_PARSER=~deepseek/deepseek-v4-flash-latest
+# LLM_MODEL_JUDGE=~deepseek/deepseek-v4-flash-latest
 # LLM_TEMP_PROFILER=0.2     LLM_TEMP_PLANNER=0.3     LLM_TEMP_JD_PARSER=0.1     LLM_TEMP_JUDGE=0.2
 # LLM_MAX_TOKENS_PROFILER=8000   LLM_MAX_TOKENS_PLANNER=4000   LLM_MAX_TOKENS_JD_PARSER=6000   LLM_MAX_TOKENS_JUDGE=10000
 # LLM_REASONING_PROFILER=off   LLM_REASONING_PLANNER=off   LLM_REASONING_JD_PARSER=off   LLM_REASONING_JUDGE=low

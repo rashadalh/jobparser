@@ -18,7 +18,7 @@ from jdparser.config import (
     ADZUNA_MAX_RESULTS_PER_PAGE,
 )
 
-# --- §3.3 ResumeProfile (logic — gemini-3.1-flash-lite) ------------------------------------
+# --- §3.3 ResumeProfile (logic — deepseek-v4-flash-latest) ------------------------------------
 Seniority = Literal["intern", "junior", "mid", "senior", "staff", "principal", "executive"]
 RemotePref = Literal["onsite", "hybrid", "remote", "any"]
 EmploymentType = Literal["full_time", "part_time", "contract", "permanent"]
@@ -87,7 +87,7 @@ class StoredResumeProfile(BaseModel):
     notes: list[CandidateNote] = []  # candidate-corrected feedback (no SCHEMA_VERSION bump — default-safe)
 
 
-# --- §3.4 AdzunaQuery (logic — gemini-3.1-flash-lite) — closed schema ----------------------
+# --- §3.4 AdzunaQuery (logic — deepseek-v4-flash-latest) — closed schema ----------------------
 class AdzunaQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")  # planner MUST NOT invent params
 
@@ -125,7 +125,7 @@ class JobScreen(BaseModel):
     agency_job_ids: list[str] = []
 
 
-# --- §3.5 JobRequirements (text extraction — Gemini 3.1 Flash Lite) ----------
+# --- §3.5 JobRequirements (text extraction — DeepSeek V4 Flash (latest)) ----------
 # Anchored on "years ... experience", NOT bare "\d+\s*years?" — this domain is
 # quant-finance, where "10-year Treasury" / "2-year note" / "5-year CDS" are
 # legitimate required skills, not duration-of-experience claims. Requiring
@@ -161,7 +161,7 @@ class JobRequirements(BaseModel):
         return skills
 
 
-# --- §3.6 FitJudgment (logic — gemini-3.1-flash-lite) --------------------------------------
+# --- §3.6 FitJudgment (logic — deepseek-v4-flash-latest) --------------------------------------
 FitDecision = Literal["qualified", "not_qualified", "uncertain"]
 
 

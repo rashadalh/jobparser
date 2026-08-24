@@ -25,9 +25,9 @@ Each fan-out worker runs the **job-evaluation subgraph** (§4.3):
 short-circuiting to `record_failure` on any stage failure.
 
 Two LLM tiers (§3, §6.3), both low-cost open-weight models via **OpenRouter**:
-**logic** work (resume profiling, search planning, fit judgment) runs on **gemini-3.1-flash-lite**;
+**logic** work (resume profiling, search planning, fit judgment) runs on **deepseek-v4-flash-latest**;
 **text extraction** (turning JD prose into structured requirements) runs on
-**Gemini 3.1 Flash Lite**.
+**DeepSeek V4 Flash (latest)**.
 
 Three persistence layers, all JSON flat-files (no DB):
 - **Resume-profile cache** — durable, content-addressed; survives across runs (§3.6, §3.7).
@@ -207,7 +207,7 @@ The two terminal nodes (`finalize` on success, `record_failure` on failure) each
 a clean `EvaluatedJob` and return `{"evaluated_jobs": [ej]}` into the parent reducer.
 `result` is never the thing emitted to the parent.
 
-### 3.3 `ResumeProfile` (logic — gemini-3.1-flash-lite)
+### 3.3 `ResumeProfile` (logic — deepseek-v4-flash-latest)
 
 ```python
 from typing import Literal
@@ -245,10 +245,13 @@ class ResumeProfile(BaseModel):
     evidence: list[ResumeEvidence]
 ```
 
-Invariant: every non-trivial claim the profiler asserts (seniority, years, a key
-skill) SHOULD have a corresponding `evidence` entry. Serialization: `.model_dump()`.
+Invariant: `evidence` is the fit-judge's only window into the resume. Every
+non-trivial claim AND every accomplishment/project/leadership bullet that names
+a tool, deliverable, or team act MUST have a corresponding `evidence` entry
+with a verbatim `source_quote`. Do not collapse a career into a handful of
+theme quotes. Serialization: `.model_dump()`.
 
-### 3.4 `AdzunaQuery` (logic — gemini-3.1-flash-lite) — **closed schema**
+### 3.4 `AdzunaQuery` (logic — deepseek-v4-flash-latest) — **closed schema**
 
 The planner MAY expand role synonyms but **MUST NOT invent parameters**. The
 schema enumerates exactly the supported Adzuna params (§3.8.1 cites the API).
@@ -278,12 +281,12 @@ re-hardcode `20`/`50`.
 Validation: `AdzunaQuery` is validated (Pydantic) **before** any API call. A plan
 is `list[AdzunaQuery]`; the planner returns ≤ `SEARCH_PLAN_MAX_QUERIES` (§6.1).
 
-### 3.5 `JobRequirements` (text extraction — Gemini 3.1 Flash Lite)
+### 3.5 `JobRequirements` (text extraction — DeepSeek V4 Flash (latest))
 
 ```python
 class JobRequirements(BaseModel):
-    required_skills: list[str]
-    preferred_skills: list[str]
+    required_skills: list[str]             # named skills/tools/capabilities, NOT whole qualification bullets
+    preferred_skills: list[str]            # same: split compound "Who You Are" bullets into distinct items
     min_years_experience: float | None
     education: list[str]                   # e.g. ["BS Computer Science"]
     education_required: bool
@@ -294,7 +297,7 @@ class JobRequirements(BaseModel):
     employment_type: EmploymentType | None
 ```
 
-### 3.6 `FitJudgment` (logic — gemini-3.1-flash-lite)
+### 3.6 `FitJudgment` (logic — deepseek-v4-flash-latest)
 
 ```python
 FitDecision = Literal["qualified", "not_qualified", "uncertain"]
@@ -322,7 +325,10 @@ class FitJudgment(BaseModel):
 
 Invariant: if `decision == "qualified"`, every entry in `JobRequirements.required_skills`
 the judge counts as met MUST appear in `met_requirements` with a non-empty
-`evidence_quote`; `failed_dealbreakers` MUST be empty; `thematic_fit` MUST be true.
+`evidence_quote` that actually supports that requirement (a shared word or a
+leftover theme quote is not support; unsupported conjuncts go in
+`missing_hard_requirements`); `failed_dealbreakers` MUST be empty;
+`thematic_fit` MUST be true.
 
 ### 3.7 `StoredResumeProfile` (durable cache record — JSON file)
 
@@ -336,7 +342,7 @@ class StoredResumeProfile(BaseModel):
     profile: ResumeProfile
     parser_version: str      # PARSER_VERSION  (§6.1)
     schema_version: str      # SCHEMA_VERSION  (§6.1)
-    model: str               # OpenRouter slug that produced `profile` (e.g. "google/gemini-3.1-flash-lite")
+    model: str               # OpenRouter slug that produced `profile` (e.g. "~deepseek/deepseek-v4-flash-latest")
     created_at: str          # ISO-8601 UTC
     updated_at: str          # ISO-8601 UTC
 ```
@@ -397,10 +403,13 @@ class Fingerprint(BaseModel):
     cache_key: str    # sha256(f"{text_hash}:{PARSER_VERSION}:{SCHEMA_VERSION}"), hex
 ```
 
-`cache_key` deliberately incorporates parser/schema versions so a version bump
-invalidates the cache. It does **not** include `model` (the overview specifies
-"cached by text hash and parser version"); the producing model is recorded in
-`StoredResumeProfile.model` for audit only.
+`cache_key` incorporates parser/schema versions so a version bump is a cache
+miss and the profiler re-runs. It does **not** include `model` (the overview
+specifies "cached by text hash and parser version"); the producing model is
+recorded in `StoredResumeProfile.model` for audit only. The prior file stays
+listed (`GET /api/profiles` does not filter by version). A re-parse of the same
+text inherits `id` / `created_at` / `notes` from the prior file and then
+retires it.
 
 ### 3.9 `EvaluatedJob` (per-job result; appended to `evaluated_jobs`)
 
@@ -502,8 +511,9 @@ class ErrorRecord(BaseModel):
 ### Resume-profile cache (`data/profiles/{cache_key}.json`)
 - **Enters:** on a cache **miss**, after the profiler LLM returns a valid
   `ResumeProfile`, `put_profile()` writes the file (create or overwrite same key).
-- **Exits:** only by explicit deletion or a `cache_key` change (parser/schema bump
-  ⇒ new key ⇒ old file orphaned, harmless). Never auto-evicted.
+- **Exits:** explicit deletion, or retirement of a superseded version after the
+  same resume text is re-parsed under a new `cache_key` (notes move with it).
+  A version bump alone does **not** hide or delete the file. Never auto-evicted.
 - **In-place mutation:** a write to an existing `cache_key` overwrites atomically
   (write temp file, `os.replace`). `put_profile()` itself preserves `created_at` —
   if a file already exists at the key it reads the existing `created_at` and keeps it,
@@ -611,7 +621,7 @@ parent `evaluated_jobs` reducer (§3.10).
 ```python
 def profile_resume(resume_text: str) -> ResumeProfile          # resume_profiler.py  (logic)
 def plan_queries(profile: ResumeProfile) -> list[AdzunaQuery]  # search_planner.py (logic)
-def parse_jd_requirements(jd_text: str) -> JobRequirements      # jd_parser.py       (Gemini Flash Lite)
+def parse_jd_requirements(jd_text: str) -> JobRequirements      # jd_parser.py       (DeepSeek V4 Flash (latest))
 def judge_fit(profile: ResumeProfile, requirements: JobRequirements) -> FitJudgment  # fit_judge.py (logic)
 ```
 
@@ -743,7 +753,7 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `FETCH_TIMEOUT_S` | `20` | seconds; httpx request timeout |
 | `PLAYWRIGHT_TIMEOUT_MS` | `30000` | milliseconds; Playwright nav/render timeout |
 | `HTTP_MAX_RETRIES` | `2` | count; httpx retry attempts on 5xx/timeout |
-| `PARSER_VERSION` | `"1.1.0"` | semver; resume parsing logic version (1.1.0: total_years_experience = whole-career span, not a field-specific figure). Part of the cache key — a bump invalidates cached profiles so they re-parse. |
+| `PARSER_VERSION` | `"1.2.0"` | semver; resume parsing logic version (1.1.0: total_years_experience = whole-career span, not a field-specific figure; 1.2.0: `evidence[]` is per-bullet, not a handful of theme summaries). Part of the cache key — a bump invalidates cached profiles so they re-parse. |
 | `SCHEMA_VERSION` | `"1.2.0"` | semver; ResumeProfile schema version (1.1.0 added `education`; 1.2.0 added `work_periods` for deterministic years). A bump invalidates cached profiles so they re-parse. |
 
 ### 6.2 Frontend constants — `web/lib/api.ts`
@@ -751,21 +761,21 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | Name | Value | Unit |
 |---|---|---|
 | `POLL_INTERVAL_MS` | `2000` | milliseconds; run-status poll cadence |
-| `POLL_TIMEOUT_MS` | `300000` | milliseconds (5 min); give-up ceiling for a run |
+| `POLL_TIMEOUT_MS` | `300000` | milliseconds (5 min); when to show the "still working" banner. Polling continues until the run is `completed`/`failed`. |
 | `NEXT_PUBLIC_API_BASE` | `"http://localhost:8000"` | env var; API origin |
 
 ### 6.3 LLM constants & model routing — `config.py`, `llm/client.py`
 
 Provider is **OpenRouter** (OpenAI-compatible API) accessed via the **OpenAI Python
 SDK** + **`instructor`** for Pydantic-validated structured output. Low-cost
-open-weight models route by work type: **logic → gemini-3.1-flash-lite**, **text extraction →
-Gemini 3.1 Flash Lite**.
+open-weight models route by work type: **logic → deepseek-v4-flash-latest**, **text extraction →
+DeepSeek V4 Flash (latest)**.
 
 | Name | Value |
 |---|---|
 | `OPENROUTER_BASE_URL` | `"https://openrouter.ai/api/v1"` |
-| `MODEL_LOGIC` | `"google/gemini-3.1-flash-lite"` (logic) |
-| `MODEL_GEMINI_FLASH_LITE` | `"google/gemini-3.1-flash-lite"` (text extraction) |
+| `MODEL_LOGIC` | `"~deepseek/deepseek-v4-flash-latest"` (logic) |
+| `MODEL_EXTRACT` | `"~deepseek/deepseek-v4-flash-latest"` (text extraction) |
 | `LLM_MAX_RETRIES` | `2` (instructor re-ask count on validation failure) |
 
 **Per-node LLM config — `config.py: LLM_NODES` (parallel-enum mapping; do not infer):**
@@ -776,7 +786,7 @@ Generous defaults; **every field is overridable at startup via an env var** (bel
 |---|---|---|---|---|---|---|
 | `profiler` | `profile_resume` | `MODEL_LOGIC` | `0.2` | `8000` | `off` | logic: seniority/domain/authorization inference + verbose `evidence[]` |
 | `planner` | `plan_queries` | `MODEL_LOGIC` | `0.3` | `4000` | `off` | logic: synonym expansion (small output) |
-| `jd_parser` | `parse_jd_requirements` | `MODEL_GEMINI_FLASH_LITE` | `0.1` | `6000` | `off` | text extraction: stated requirements from JD |
+| `jd_parser` | `parse_jd_requirements` | `MODEL_EXTRACT` | `0.1` | `6000` | `off` | text extraction: stated requirements from JD |
 | `judge` | `judge_fit` | `MODEL_LOGIC` | `0.2` | `10000` | `medium` | logic: the one node that genuinely reasons; `met_requirements[]` + `rationale` + reasoning headroom (bumped from `low`: thematic/functional fit needs more than mechanical skill-list matching) |
 
 **Sizing rationale (how the ceilings are qualified).** `max_tokens` is a **ceiling
@@ -788,7 +798,7 @@ serialized JSON + reasoning headroom + margin. Worst-case JSON output by schema:
 (`met_requirements[]` + `rationale`), `JobRequirements` ~1K, `SearchPlan` ~0.5K. The
 `judge` ceiling is largest because it carries reasoning on top of the JSON; the two
 pure-extraction logic nodes run reasoning `off` (schema-fill needs no chain-of-thought),
-and Gemini Flash Lite barely reasons.
+and DeepSeek V4 Flash (latest) barely reasons.
 
 **Env overrides (read once at startup in `config.py`).** For each node, the four
 fields fall back to the defaults above when the env var is unset. `<NODE>` ∈
@@ -796,7 +806,7 @@ fields fall back to the defaults above when the env var is unset. `<NODE>` ∈
 
 | field | env var | example |
 |---|---|---|
-| model slug | `LLM_MODEL_<NODE>` | `LLM_MODEL_JUDGE=google/gemini-3.1-flash-lite` |
+| model slug | `LLM_MODEL_<NODE>` | `LLM_MODEL_JUDGE=~deepseek/deepseek-v4-flash-latest` |
 | temperature | `LLM_TEMP_<NODE>` | `LLM_TEMP_PROFILER=0.1` |
 | max_tokens (ceiling) | `LLM_MAX_TOKENS_<NODE>` | `LLM_MAX_TOKENS_PROFILER=12000` |
 | reasoning | `LLM_REASONING_<NODE>` | `LLM_REASONING_JUDGE=high` |
@@ -819,7 +829,7 @@ def _node_cfg(node, model, temp, max_tokens, reasoning):
 LLM_NODES = {
     "profiler":  _node_cfg("PROFILER",  MODEL_LOGIC,               "0.2", "8000",  "off"),
     "planner":   _node_cfg("PLANNER",   MODEL_LOGIC,               "0.3", "4000",  "off"),
-    "jd_parser": _node_cfg("JD_PARSER", MODEL_GEMINI_FLASH_LITE, "0.1", "6000",  "off"),
+    "jd_parser": _node_cfg("JD_PARSER", MODEL_EXTRACT, "0.1", "6000",  "off"),
     "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "medium"),
 }
 ```
@@ -1030,9 +1040,9 @@ user-visible behavior.
    `lib/types.ts` mirrors snake_case fields directly — no camelCase remap layer.
    This supersedes the camelCase TS shape in `docs/system-overview.html`.
 2. **Provider + model routing** per §6.3: **OpenRouter** via the OpenAI SDK +
-   `instructor`; **Gemini 3.1 Flash Lite** (`google/gemini-3.1-flash-lite`) for logic
+   `instructor`; **DeepSeek V4 Flash (latest)** (`~deepseek/deepseek-v4-flash-latest`) for logic
    nodes AND for literal JD extraction. The two routing constants (`MODEL_LOGIC`,
-   `MODEL_GEMINI_FLASH_LITE`) currently resolve to the same slug — see §6.3.
+   `MODEL_EXTRACT`) currently resolve to the same slug — see §6.3.
 3. **JD extraction** order: JSON-LD `JobPosting.description` → ATS-specific parser →
    `trafilatura` readable text. Playwright is a fallback only when static fetch
    yields thin/JS-gated content (§ EXTRACT).
@@ -1060,7 +1070,10 @@ PyPI 2026-06-25;
 view`) and are the current latest-stable releases, now pinned exact (incl.
 `@types/{react,react-dom,node}`); Next 16.2.9 / React 19.2.7 are the newest stable
 majors (Next 16 peers `react ^18.2||^19`). The OpenRouter model slug
-(`google/gemini-3.1-flash-lite`) was confirmed present and priced
-on the OpenRouter models API (`GET /api/v1/models`) **as of 2026-06-26**. Remaining
+(`~deepseek/deepseek-v4-flash-latest`) was confirmed present
+on the OpenRouter models API (`GET /api/v1/models`) **as of 2026-08-10**. Note the `~`
+prefix: this is a *floating pointer* ("always redirects to the latest model in the DeepSeek
+V4 Flash family"), not a pinned revision — the model behind it changes without a code
+change here. Remaining
 Python versions flagged "verify before relying" in the table were not individually
 probed.

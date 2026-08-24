@@ -102,8 +102,11 @@ client (BUILD.md hard rule). State machine:
 idle ─upload─▶ starting ─run_id─▶ polling ─(status terminal)─▶ done | error
 ```
 Poll loop: `setInterval(getRun, POLL_INTERVAL_MS)`, stop when
-`status ∈ {completed, failed}` or `POLL_TIMEOUT_MS` elapsed; on timeout show a
-"taking longer than expected" message (do not silently spin).
+`status ∈ {completed, failed}`. After `POLL_TIMEOUT_MS` show a "still working"
+banner but keep polling — stopping used to freeze the UI in `polling` (history
+disabled) while the server finished. `run.phase` is written when a graph node
+*starts* (`stream_mode` includes `"tasks"`), so "Searching job boards" is not
+left up through the screener.
 
 ## Components
 

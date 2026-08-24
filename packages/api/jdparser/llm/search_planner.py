@@ -1,6 +1,6 @@
-"""search_planner — `plan_queries` (logic node, gemini-3.1-flash-lite). SPEC §3.4 / §4.4.
+"""search_planner — `plan_queries` (logic node, deepseek-v4-flash-latest). SPEC §3.4 / §4.4.
 
-Defaults (env-overridable, SPEC §6.3): gemini-3.1-flash-lite, temp 0.3, max_tokens 4000,
+Defaults (env-overridable, SPEC §6.3): deepseek-v4-flash-latest, temp 0.3, max_tokens 4000,
 reasoning off. response_model is the `SearchPlan` wrapper; returns its `queries`
 truncated to SEARCH_PLAN_MAX_QUERIES. Maps validation failure -> PLAN_INVALID.
 

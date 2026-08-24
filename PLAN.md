@@ -26,7 +26,7 @@ returns `qualified` with confidence ≥ 0.75, backed by cited resume evidence.
   searches → Adzuna search → dedupe → **fan-out job evaluation** → aggregate.
 - Job-evaluation subgraph per job: resolve final URL → fetch (static HTTP, with
   Playwright headless fallback) → extract JD (JSON-LD → ATS parsers → readable
-  text) → parse requirements → judge fit (all Gemini 3.1 Flash Lite).
+  text) → parse requirements → judge fit (all DeepSeek V4 Flash (latest)).
 - FastAPI service bridging the browser to the graph (start run, poll status/results).
 - Next.js frontend: upload a resume, watch run progress, see qualified job cards
   with cited evidence, plus an audit view of failures.
@@ -47,7 +47,7 @@ returns `qualified` with confidence ≥ 0.75, backed by cited resume evidence.
 | Surface | Doc | Owns |
 |---|---|---|
 | Orchestration | `docs/IMPLEMENTATION_GRAPH.md` | LangGraph state, top-level nodes, fan-out, evaluation subgraph |
-| LLM agents | `docs/IMPLEMENTATION_LLM.md` | The 6 OpenRouter nodes (all Gemini 3.1 Flash Lite): schemas, prompts, routing, structured output |
+| LLM agents | `docs/IMPLEMENTATION_LLM.md` | The 6 OpenRouter nodes (all DeepSeek V4 Flash (latest)): schemas, prompts, routing, structured output |
 | Job discovery | `docs/IMPLEMENTATION_ADZUNA.md` | Adzuna client, search execution, dedupe |
 | Evidence extraction | `docs/IMPLEMENTATION_EXTRACT.md` | URL resolve, fetch (httpx+Playwright), JSON-LD/ATS/readable, quality checks |
 | Profile cache | `docs/IMPLEMENTATION_CACHE.md` | Fingerprinting, JSON flat-file store, resume text extraction |

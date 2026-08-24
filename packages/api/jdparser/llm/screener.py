@@ -1,4 +1,4 @@
-"""screener — `screen_relevance` (relevance pre-screen, Gemini 3.1 Flash Lite).
+"""screener — `screen_relevance` (relevance pre-screen, DeepSeek V4 Flash (latest)).
 
 A COARSE, cheap, same-field filter run BEFORE the expensive per-job evaluation
 (resolve→fetch→extract→parse→judge). It reads only the title + snippet already on the

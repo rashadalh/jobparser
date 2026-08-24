@@ -66,18 +66,20 @@ export default function Home() {
     deadlineRef.current = Date.now() + POLL_TIMEOUT_MS;
 
     const tick = async () => {
-      if (Date.now() > deadlineRef.current) {
-        stopPolling();
-        setTimedOut(true);
-        return;
-      }
       try {
         const rec = await getRun(id);
         setRun(rec);
         if (rec.status === "completed" || rec.status === "failed") {
           stopPolling();
+          setTimedOut(false);
           setPhase("done");
           setRefreshKey((k) => k + 1); // new run (+ maybe new parsed profile) now in the DB
+          return;
+        }
+        // Warn after POLL_TIMEOUT_MS but keep polling. Stopping here used to leave
+        // phase="polling" (upload + run history disabled) while the server finished.
+        if (Date.now() > deadlineRef.current) {
+          setTimedOut(true);
         }
       } catch (e) {
         stopPolling();
@@ -210,7 +212,7 @@ export default function Home() {
 
       <SavedPanel
         refreshKey={refreshKey}
-        disabled={active || parsing}
+        disabled={(active && !timedOut) || parsing}
         onRunFromProfile={handleRunFromProfile}
         onOpenRun={handleOpenRun}
       />
@@ -244,9 +246,10 @@ export default function Home() {
 
       {timedOut && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          This run is taking longer than expected, so we stopped checking after{" "}
-          {Math.round(POLL_TIMEOUT_MS / 1000)} seconds. It may still be running on
-          the server. Try again in a bit, or upload your resume again.
+          This search is taking longer than the usual{" "}
+          {Math.round(POLL_TIMEOUT_MS / 1000)} seconds — a full pass can run
+          closer to 10 minutes. We&apos;re still checking. You can also open it
+          from Run history when it finishes.
         </div>
       )}
 

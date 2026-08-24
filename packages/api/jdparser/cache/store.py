@@ -2,12 +2,15 @@
 
 Content-addressed JSON flat-files at ``data/profiles/{cache_key}.json`` (SPEC §9:
 MVP-stubbed; eventual form is a managed store). The cache is application state that
-survives across runs; it is never auto-evicted.
+survives across runs; it is never auto-evicted. A parser/schema bump changes the
+key so the profiler re-runs, but the prior file stays listed and its notes move
+onto the new record when the same resume text is re-parsed.
 """
 
 import os
 import tempfile
 
+from jdparser.cache.fingerprint import make_cache_key
 from jdparser.config import PROFILES_DIR
 from jdparser.llm.schemas import StoredResumeProfile
 
@@ -25,7 +28,7 @@ def list_profiles() -> list[StoredResumeProfile]:
 
     A profile written under a prior ``SCHEMA_VERSION`` (e.g. before a field was added)
     fails validation against the current schema; such stale files are skipped rather
-    than failing the whole listing — they are orphaned by the cache-key bump anyway.
+    than failing the whole listing.
     """
     out: list[StoredResumeProfile] = []
     for path in PROFILES_DIR.glob("*.json"):
@@ -35,6 +38,53 @@ def list_profiles() -> list[StoredResumeProfile]:
             continue
     out.sort(key=lambda r: r.updated_at, reverse=True)
     return out
+
+
+def find_prior_profile(text: str) -> StoredResumeProfile | None:
+    """The on-disk profile for this resume text, under any parser/schema version.
+
+    ``cache_key`` is ``sha256(text_hash : stored.parser_version : stored.schema_version)``.
+    Reconstructing that key from each file's own versions finds the prior parse after
+    a bump, which is how notes survive a re-profile.
+    """
+    hits = [
+        p
+        for p in list_profiles()
+        if make_cache_key(text, p.parser_version, p.schema_version) == p.cache_key
+    ]
+    if not hits:
+        return None
+    # Prefer the copy that already has notes; then the most recently touched.
+    hits.sort(key=lambda p: (len(p.notes), p.updated_at), reverse=True)
+    return hits[0]
+
+
+def inherit_from_prior(
+    record: StoredResumeProfile, text: str
+) -> tuple[StoredResumeProfile, StoredResumeProfile | None]:
+    """Copy id / created_at / notes from a prior parse of the same text, if any."""
+    prior = find_prior_profile(text)
+    if prior is None:
+        return record, None
+    return (
+        record.model_copy(
+            update={"id": prior.id, "created_at": prior.created_at, "notes": prior.notes}
+        ),
+        prior,
+    )
+
+
+def delete_profile(cache_key: str) -> None:
+    """Remove the file at ``cache_key`` if it exists."""
+    path = PROFILES_DIR / f"{cache_key}.json"
+    if path.exists():
+        path.unlink()
+
+
+def retire_superseded(prior: StoredResumeProfile | None, new_key: str) -> None:
+    """Drop the old-version file once its notes have moved to ``new_key``."""
+    if prior is not None and prior.cache_key != new_key:
+        delete_profile(prior.cache_key)
 
 
 def put_profile(record: StoredResumeProfile) -> None:

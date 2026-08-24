@@ -42,7 +42,7 @@ def load_or_parse_profile(state):
     if existing is not None:
         return {"resume_profile": existing.profile.model_dump(),
                 "resume_cache_hit": True}
-    profile = profile_resume(state["resume_text"])      # llm/resume_profiler.py (Gemini 3.1 Flash Lite)
+    profile = profile_resume(state["resume_text"])      # llm/resume_profiler.py (DeepSeek V4 Flash (latest))
     # recompute the full fingerprint here on miss (state only carries cache_key)
     fp = compute_fingerprint(state["resume_file_path"], state["resume_text"])
     rec = StoredResumeProfile(
@@ -56,7 +56,7 @@ def load_or_parse_profile(state):
 
 def plan_searches(state):
     profile = ResumeProfile.model_validate(state["resume_profile"])
-    plan = plan_queries(profile)                 # llm/search_planner.py (Gemini 3.1 Flash Lite)
+    plan = plan_queries(profile)                 # llm/search_planner.py (DeepSeek V4 Flash (latest))
     if not plan:
         raise JDParserError(code="PLAN_EMPTY", message="planner produced no queries")
     return {"search_plan": [q.model_dump() for q in plan]}
@@ -132,7 +132,7 @@ def check_jd(s):
 
 def parse_requirements(s):
     try:
-        req = parse_jd_requirements(s["jd_text"])        # Gemini 3.1 Flash Lite
+        req = parse_jd_requirements(s["jd_text"])        # DeepSeek V4 Flash (latest)
         return {"requirements": req.model_dump()}
     except JDParserError as e:
         return {"result": [_fail(s, "parse", e)]}
@@ -141,7 +141,7 @@ def judge_fit_node(s):
     try:
         profile = ResumeProfile.model_validate(s["profile"])    # injected via Send (SPEC §3.2)
         req = JobRequirements.model_validate(s["requirements"])
-        j = judge_fit(profile, req)                      # Gemini 3.1 Flash Lite
+        j = judge_fit(profile, req)                      # DeepSeek V4 Flash (latest)
         return {"judgment": j.model_dump()}
     except JDParserError as e:
         return {"result": [_fail(s, "judge", e)]}

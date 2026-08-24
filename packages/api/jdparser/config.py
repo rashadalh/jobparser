@@ -93,13 +93,20 @@ PLAYWRIGHT_TIMEOUT_MS: int = 30000          # milliseconds; Playwright nav/rende
 # HTTP error response (verified: retries=5 against a 503 issues exactly one request), so
 # retrying a 5xx takes an explicit request loop — see jobsource/adzuna/client.search.
 HTTP_MAX_RETRIES: int = 2
-PARSER_VERSION: str = "1.1.0"               # semver; resume parsing logic version (1.1.0: total-career years)
+PARSER_VERSION: str = "1.2.0"               # semver; resume parsing logic version (1.1.0: total-career years; 1.2.0: per-bullet evidence, not theme summaries)
 SCHEMA_VERSION: str = "1.2.0"               # semver; ResumeProfile schema (1.1.0: education; 1.2.0: work_periods)
 
 # --- §6.3 LLM constants & model routing --------------------------------------
 OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
-MODEL_LOGIC: str = "google/gemini-3.1-flash-lite"        # logic (profiler / planner / judge)
-MODEL_GEMINI_FLASH_LITE: str = "google/gemini-3.1-flash-lite"  # text extraction
+# The `~` prefix marks an OpenRouter floating pointer: it always redirects to the newest
+# model in the DeepSeek V4 Flash family, so the model actually serving these nodes changes
+# without a commit here. The per-node temps/max_tokens/reasoning below are calibrated
+# against whatever it pointed at when they were set. Pin a dated slug
+# (e.g. deepseek/deepseek-v4-flash-0731) if a run needs reproducibility.
+MODEL_LOGIC: str = "~deepseek/deepseek-v4-flash-latest"     # logic (profiler / planner / judge)
+# Was MODEL_GEMINI_FLASH_LITE; renamed because a constant naming its vendor lies the
+# moment the routing changes. Same slug as MODEL_LOGIC today — the split is routing intent.
+MODEL_EXTRACT: str = "~deepseek/deepseek-v4-flash-latest"   # text extraction (jd_parser / screener)
 LLM_MAX_RETRIES: int = 2                     # instructor re-ask count on validation failure
 
 # --- Durable flat-file stores (SPEC §3.7/§3.9; created at import) ------------
@@ -140,11 +147,11 @@ def _node_cfg(node: str, model: str, temp: str, max_tokens: str, reasoning: str)
 LLM_NODES: dict[str, NodeCfg] = {
     "profiler":  _node_cfg("PROFILER",  MODEL_LOGIC,               "0.2", "8000",  "off"),
     "planner":   _node_cfg("PLANNER",   MODEL_LOGIC,               "0.3", "4000",  "off"),
-    "jd_parser": _node_cfg("JD_PARSER", MODEL_GEMINI_FLASH_LITE, "0.1", "6000",  "off"),
+    "jd_parser": _node_cfg("JD_PARSER", MODEL_EXTRACT,             "0.1", "6000",  "off"),
     "judge":     _node_cfg("JUDGE",     MODEL_LOGIC,               "0.2", "10000", "medium"),
     # relevance pre-screen over Adzuna titles+snippets (cheap, batched): coarse same-field
-    # filter before the expensive per-job evaluation. Gemini Flash Lite; output is just ids.
-    "screener":  _node_cfg("SCREENER",  MODEL_GEMINI_FLASH_LITE, "0.1", "4000",  "off"),
+    # filter before the expensive per-job evaluation. DeepSeek V4 Flash (latest); output is just ids.
+    "screener":  _node_cfg("SCREENER",  MODEL_EXTRACT,             "0.1", "4000",  "off"),
     # merges free-text feedback into the candidate's existing note list (not blind-append).
     "feedback":  _node_cfg("FEEDBACK",  MODEL_LOGIC,               "0.2", "2000",  "off"),
 }

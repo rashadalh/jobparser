@@ -138,7 +138,7 @@ fetch the page, extract the description, pull out the requirements, and judge th
 The final yes or no is plain code, not a model, so the same evidence always produces the
 same answer.
 
-The language work runs on Gemini 3.1 Flash Lite through OpenRouter.
+The language work runs on DeepSeek V4 Flash (latest) through OpenRouter.
 
 ## Digging deeper
 
@@ -155,7 +155,7 @@ resume meets what the posting asks for. Getting there means mixing language work
 live page fetches, cheap filters, and expensive checks, and not losing track when
 one step fails. [LangGraph](https://langchain-ai.github.io/langgraph/) is what
 ties those steps together. Most nodes are ordinary Python. Six of them call a
-model (Gemini 3.1 Flash Lite through OpenRouter). Those six are the agents.
+model (DeepSeek V4 Flash (latest) through OpenRouter). Those six are the agents.
 
 ### The six agents
 

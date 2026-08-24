@@ -47,3 +47,27 @@ def test_planner_prompt_is_interpolated_not_raw() -> None:
 def test_prompts_are_read_verbatim() -> None:
     """No strip/dedent on load — trailing whitespace is part of the prompt."""
     assert load("fit_judge").endswith("\n")
+
+
+def test_profiler_requires_per_bullet_evidence() -> None:
+    """The judge cannot reread the resume; a handful of theme quotes starves it."""
+    prompt = load("resume_profiler")
+    assert "ONLY window" in prompt
+    assert "one entry per bullet" in prompt
+
+
+def test_judge_rejects_unsupported_citations() -> None:
+    """A loosely related leftover quote must not count as proof."""
+    prompt = load("fit_judge")
+    assert "Sharing a word is not support" in prompt
+    assert "Agentic engineering teams" in prompt
+    assert "does not prove" in prompt
+    assert "missing_hard_requirements" in prompt
+
+
+def test_jd_parser_splits_compound_qualification_bullets() -> None:
+    """Whole 'Who You Are' sentences cannot be proven by one resume quote."""
+    prompt = load("jd_parser")
+    assert "NOT entire" in prompt
+    assert "Who You Are" in prompt
+    assert '["Python", "data pipelines"' in prompt

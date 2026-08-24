@@ -17,7 +17,7 @@ from uuid import uuid4
 from langgraph.types import Send
 
 from jdparser.cache.fingerprint import compute_fingerprint
-from jdparser.cache.store import get_profile, put_profile
+from jdparser.cache.store import get_profile, inherit_from_prior, put_profile, retire_superseded
 from jdparser.config import (
     CONFIDENCE_THRESHOLD,
     MIN_JD_CHARS,
@@ -80,7 +80,7 @@ def load_or_parse_profile(state: JobMatchState) -> NodeResult:
         }
     text = state["resume_text"]
     assert text is not None
-    profile = profile_resume(text)                      # llm/resume_profiler.py (gemini-3.1-flash-lite)
+    profile = profile_resume(text)                      # llm/resume_profiler.py (deepseek-v4-flash-latest)
     rec = StoredResumeProfile(
         id=str(uuid4()),
         user_id=state["user_id"],
@@ -92,10 +92,13 @@ def load_or_parse_profile(state: JobMatchState) -> NodeResult:
         created_at=now_iso(),
         updated_at=now_iso(),
     )
+    rec, prior = inherit_from_prior(rec, text)
     put_profile(rec)                                    # atomic write
+    retire_superseded(prior, rec.cache_key)
     return {
         "resume_profile": profile.model_dump(),
         "resume_cache_hit": False,
+        "candidate_notes": [n.model_dump() for n in rec.notes],
     }
 
 
@@ -155,7 +158,7 @@ def plan_searches(state: JobMatchState) -> NodeResult:
     if locations is not None:
         profile = profile.model_copy(update={"locations": locations})
         out["resume_profile"] = profile.model_dump()  # the judge sees the chosen locations too
-    plan = plan_queries(profile)                        # llm/search_planner.py (gemini-3.1-flash-lite)
+    plan = plan_queries(profile)                        # llm/search_planner.py (deepseek-v4-flash-latest)
     if not plan:
         raise JDParserError(code="PLAN_EMPTY", message="planner produced no queries")
     if locations:
@@ -234,7 +237,7 @@ def screen_jobs(state: JobMatchState) -> NodeResult:
     errors: list[dict[str, Any]] = []
     agency_ids: set[str] = set()
     try:
-        result = screen_relevance_batched(profile, jobs)       # llm/screener.py (batched, Gemini Flash Lite)
+        result = screen_relevance_batched(profile, jobs)       # llm/screener.py (batched, DeepSeek V4 Flash (latest))
         ranked_ids = result.relevant_job_ids                   # most-relevant-first (screener contract)
         agency_ids = set(result.agency_job_ids)
     except JDParserError as e:

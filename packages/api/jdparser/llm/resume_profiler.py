@@ -1,6 +1,6 @@
-"""resume_profiler — `profile_resume` (logic node, gemini-3.1-flash-lite). SPEC §3.3 / §4.4.
+"""resume_profiler — `profile_resume` (logic node, deepseek-v4-flash-latest). SPEC §3.3 / §4.4.
 
-Defaults (env-overridable, SPEC §6.3): gemini-3.1-flash-lite, temp 0.2, max_tokens 8000,
+Defaults (env-overridable, SPEC §6.3): deepseek-v4-flash-latest, temp 0.2, max_tokens 8000,
 reasoning off. Maps validation failure -> PROFILE_INVALID (SPEC §6.4).
 """
 
