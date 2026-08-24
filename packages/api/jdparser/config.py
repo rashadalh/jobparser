@@ -93,7 +93,7 @@ PLAYWRIGHT_TIMEOUT_MS: int = 30000          # milliseconds; Playwright nav/rende
 # HTTP error response (verified: retries=5 against a 503 issues exactly one request), so
 # retrying a 5xx takes an explicit request loop — see jobsource/adzuna/client.search.
 HTTP_MAX_RETRIES: int = 2
-PARSER_VERSION: str = "1.1.0"               # semver; resume parsing logic version (1.1.0: total-career years)
+PARSER_VERSION: str = "1.2.0"               # semver; resume parsing logic version (1.1.0: total-career years; 1.2.0: per-bullet evidence, not theme summaries)
 SCHEMA_VERSION: str = "1.2.0"               # semver; ResumeProfile schema (1.1.0: education; 1.2.0: work_periods)
 
 # --- §6.3 LLM constants & model routing --------------------------------------

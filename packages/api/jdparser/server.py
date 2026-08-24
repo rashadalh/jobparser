@@ -22,7 +22,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.runnables import RunnableConfig
 
 from jdparser.cache.fingerprint import compute_fingerprint
-from jdparser.cache.store import get_profile, list_profiles, put_profile
+from jdparser.cache.store import (
+    get_profile,
+    inherit_from_prior,
+    list_profiles,
+    put_profile,
+    retire_superseded,
+)
 from jdparser.config import (
     EVAL_FANOUT_CONCURRENCY,
     MODEL_LOGIC,
@@ -74,29 +80,64 @@ def _save_upload(file: UploadFile, run_id: str) -> str:
 
 # Node -> human phase label for the progress display. Instant/internal nodes
 # (fingerprint_resume, dedupe_jobs) are omitted; the phase just holds the prior label.
+# Written when the node STARTS (stream_mode "tasks"), not when it finishes — otherwise
+# "Searching job boards" stays up through the screener.
 _PHASE_LABELS = {
     "extract_resume_text": "Reading your resume",
     "load_or_parse_profile": "Understanding your background",
     "plan_searches": "Planning job searches",
     "search_jobs": "Searching job boards",
-    "screen_jobs": "Evaluating jobs against your resume",  # eval fan-out follows immediately
+    "screen_jobs": "Filtering the job list",
+    "job_eval": "Evaluating jobs against your resume",
     "aggregate_matches": "Compiling your matches",
 }
+
+
+def _split_stream_chunk(chunk: Any) -> tuple[str, Any]:
+    """Normalize ``graph.stream`` output. Multi-mode yields ``(mode, data)``; a
+    single-mode (or test fake) yields the data dict alone."""
+    if isinstance(chunk, tuple) and len(chunk) == 2 and isinstance(chunk[0], str):
+        return chunk[0], chunk[1]
+    return "updates", chunk
+
+
+def _task_started(payload: Any) -> str | None:
+    """Node name if this is a task-START event, else None.
+
+    Start payloads have ``name`` + ``input``; finish payloads have ``result``/``error``.
+    """
+    if not isinstance(payload, dict):
+        return None
+    name = payload.get("name")
+    if not isinstance(name, str):
+        return None
+    if "result" in payload or "error" in payload:
+        return None
+    if "input" not in payload and "triggers" not in payload:
+        return None
+    return name
 
 
 def _stream_progress(run_id: str, init: JobMatchState, config: RunnableConfig) -> None:
     """Run the graph via ``.stream()`` and write live progress into the run record.
 
-    ``stream_mode="updates"`` emits one chunk per completed node — including one per job
-    in the eval fan-out (verified: each ``Send`` to ``job_eval`` streams separately, not
-    batched). We turn those into a phase label plus a ``jobs_done``/``jobs_total`` count
-    the frontend renders as a progress bar. The final state is read afterward from the
+    ``tasks`` emits when a node *starts* (phase label). ``updates`` emits when it
+    *finishes* — including one per job in the eval fan-out (each ``Send`` to
+    ``job_eval`` streams separately). The final state is read afterward from the
     checkpointer by the caller; this only drives the display.
     """
     total: int | None = None
     done = 0
-    for chunk in _graph.stream(init, config=config, stream_mode="updates"):
-        node, update = next(iter(chunk.items()))
+    for chunk in _graph.stream(init, config=config, stream_mode=["updates", "tasks"]):
+        mode, data = _split_stream_chunk(chunk)
+        if mode == "tasks":
+            name = _task_started(data)
+            if name is not None and name in _PHASE_LABELS:
+                update_run(run_id, phase=_PHASE_LABELS[name])
+            continue
+        if mode != "updates" or not isinstance(data, dict) or not data:
+            continue
+        node, update = next(iter(data.items()))
         # dedupe_jobs sets the full pool; screen_jobs narrows it to the capped subset that
         # actually fans out — whichever emits last is the true eval total.
         if isinstance(update, dict) and update.get("deduped_jobs") is not None:
@@ -106,9 +147,15 @@ def _stream_progress(run_id: str, init: JobMatchState, config: RunnableConfig) -
             # ponytail: one small run-record write per job (<= SCREEN_EVAL_CAP). Fine at
             # MVP scale; debounce to every k-th job if the cap or run concurrency grows.
             update_run(run_id, jobs_done=done, jobs_total=total)
+        elif node == "screen_jobs":
+            # Bar is the eval fan-out (post-screen cap), not the pre-screen pool.
+            # Phase here is a fallback if the "tasks" start event never arrived.
+            update_run(
+                run_id, phase=_PHASE_LABELS["screen_jobs"], jobs_total=total, jobs_done=0
+            )
         elif node in _PHASE_LABELS:
-            extra = {"jobs_total": total, "jobs_done": 0} if node == "screen_jobs" else {}
-            update_run(run_id, phase=_PHASE_LABELS[node], **extra)
+            # Fallback when the stream is updates-only (tests, older LangGraph).
+            update_run(run_id, phase=_PHASE_LABELS[node])
 
 
 def _execute(
@@ -280,7 +327,9 @@ def parse_resume_endpoint(file: UploadFile = File(...)) -> StoredResumeProfile:
             created_at=now_iso(),
             updated_at=now_iso(),
         )
+        rec, prior = inherit_from_prior(rec, text)
         put_profile(rec)
+        retire_superseded(prior, rec.cache_key)
         return rec
     except JDParserError as e:
         # resume errors (RESUME_UNSUPPORTED_TYPE / RESUME_EMPTY_TEXT) and LLM errors
@@ -291,9 +340,9 @@ def parse_resume_endpoint(file: UploadFile = File(...)) -> StoredResumeProfile:
 def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summaries for the picker
     """Previously parsed resumes (the cache/DB), newest first — for the reuse dropdown.
 
-    Only profiles produced by the CURRENT parser/schema versions are offered, so a
-    resume parsed with superseded logic isn't reused (it would serve stale results;
-    re-uploading re-parses it under the current version).
+    Every profile that still validates is offered, including ones parsed under an
+    older parser/schema version. A version bump must not hide saved resumes or
+    their notes; re-uploading the same text re-parses and inherits those notes.
     """
     return [
         {
@@ -312,7 +361,6 @@ def list_profiles_endpoint() -> list[dict[str, Any]]:  # reason: compact summari
             "notes": [n.model_dump() for n in p.notes],
         }
         for p in list_profiles()
-        if p.parser_version == PARSER_VERSION and p.schema_version == SCHEMA_VERSION
     ]
 
 

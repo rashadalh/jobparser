@@ -150,9 +150,11 @@ def profile_resume(resume_text: str) -> ResumeProfile
 ```
 System prompt requirements: extract `ResumeProfile` (SPEC §3.3). Emphasize: infer
 `seniority`/`total_years_experience`/`domains`/`work_authorization` from the text;
-**every** non-trivial claim gets a `ResumeEvidence` with a verbatim `source_quote`;
-do not fabricate skills not supported by the text. Truncate `resume_text` to
-`MAX_RESUME_CHARS` (SPEC §6.1) before the call.
+**every** non-trivial claim AND every accomplishment/project/leadership bullet
+gets a `ResumeEvidence` with a verbatim `source_quote` (one entry per claim, not
+per theme — the judge cannot reread the resume); do not fabricate skills not
+supported by the text. Truncate `resume_text` to `MAX_RESUME_CHARS` (SPEC §6.1)
+before the call.
 
 ## `search_planner.py` — `_call(LLM_NODES["planner"], …, SearchPlan, "PLAN_INVALID")`
 
@@ -184,10 +186,11 @@ Defaults (env-overridable, SPEC §6.3): DeepSeek V4 Flash (latest), temp 0.1, `m
 def parse_jd_requirements(jd_text: str) -> JobRequirements
 ```
 Literal extraction (SPEC §3.5). System prompt: extract exactly what the JD states —
-`required_skills` vs `preferred_skills` distinction matters; `dealbreakers` are
-explicit hard filters (clearance, license, on-site-only, citizenship); set
-`education_required` from must/required language. Do not infer beyond the text.
-Truncate `jd_text` to `MAX_JD_CHARS` (60000).
+`required_skills` vs `preferred_skills` distinction matters; both are named
+skills/tools/capabilities, not whole "Who You Are" bullets (split compound
+bullets); `dealbreakers` are explicit hard filters (clearance, license,
+on-site-only, citizenship); set `education_required` from must/required language.
+Do not infer beyond the text. Truncate `jd_text` to `MAX_JD_CHARS` (60000).
 
 ## `fit_judge.py` — `_call(LLM_NODES["judge"], …, FitJudgment, "JUDGE_INVALID")`
 
@@ -205,7 +208,9 @@ against `requirements`; `decision="qualified"` only if no `failed_dealbreakers`,
 matter matches the candidate's target roles/domains — checked using `relevant_years_experience`,
 not the domain-blind `profile.total_years_experience`, see SPEC §3.6); **cite** a
 `MetRequirement.evidence_quote` (verbatim
-resume span) for each required skill counted as met; set `confidence` honestly
+resume span that actually supports the requirement — a leftover theme quote or
+keyword collision is not support; unsupported conjuncts go in
+`missing_hard_requirements`) for each required skill counted as met; set `confidence` honestly
 (displayed jobs require ≥ 0.75, SPEC §6.1 — but the judge sets confidence on merit,
 the gate is applied by code in `aggregate_matches`, SPEC §7). Pass both objects as
 JSON in the user message.

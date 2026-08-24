@@ -202,6 +202,39 @@ def test_run_record_captures_llm_spend(
     assert usage["cost_complete"] is True
 
 
+def test_phase_label_updates_when_node_starts(
+    monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
+) -> None:
+    """The UI must flip the label when a long node BEGINS, not when it finishes.
+
+    Otherwise "Searching job boards" stays up through the screener.
+    """
+    phases: list[str] = []
+
+    def _capture(run_id: str, **fields: Any) -> Any:
+        if "phase" in fields:
+            phases.append(fields["phase"])
+        return None
+
+    class _StartThenFinish:
+        def stream(self, init: Any, config: Any = None, stream_mode: Any = None) -> Any:
+            yield ("tasks", {"id": "t1", "name": "search_jobs", "input": {}, "triggers": []})
+            yield ("updates", {"search_jobs": {"job_results": []}})
+            yield ("tasks", {"id": "t2", "name": "screen_jobs", "input": {}, "triggers": []})
+            yield ("updates", {"screen_jobs": {"deduped_jobs": [{"id": "a"}]}})
+            yield ("tasks", {"id": "t3", "name": "search_jobs", "result": {}, "error": None})
+
+        def get_state(self, config: Any = None) -> Any:
+            return SimpleNamespace(values=_final_state())
+
+    monkeypatch.setattr(server, "_graph", _StartThenFinish())
+    monkeypatch.setattr(server, "update_run", _capture)
+    server._stream_progress("run-x", {}, {})  # type: ignore[arg-type]
+    assert phases[0] == "Searching job boards"          # search START, not finish
+    assert "Filtering the job list" in phases           # screener is its own label
+    assert phases.index("Searching job boards") < phases.index("Filtering the job list")
+
+
 def test_failed_run_still_reports_what_it_spent(
     monkeypatch: pytest.MonkeyPatch, runs_cleanup: list[str]
 ) -> None:
@@ -407,13 +440,26 @@ def test_add_profile_note_rejects_blank_text(monkeypatch: pytest.MonkeyPatch) ->
 def test_profiles_listing_exposes_notes(monkeypatch: pytest.MonkeyPatch) -> None:
     """The picker needs the notes inline; the panel renders them without a second fetch."""
     note = CandidateNote(note="No active clearance", kind="dealbreaker", source="s")
-    # current versions: the endpoint only offers profiles parsed under the live ones
     current = stored_profile(
         cache_key="ck-1", notes=[note],
         parser_version=PARSER_VERSION, schema_version=SCHEMA_VERSION,
     )
     monkeypatch.setattr(server, "list_profiles", lambda: [current])
     body = client.get("/api/profiles").json()
+    assert body[0]["notes"] == [note.model_dump()]
+
+
+def test_profiles_listing_includes_prior_parser_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A PARSER_VERSION bump must not hide saved resumes or their notes."""
+    note = CandidateNote(note="Will not relocate", kind="dealbreaker", source="s")
+    old = stored_profile(
+        cache_key="ck-old", notes=[note],
+        parser_version="1.0.0", schema_version="1.0.0",
+    )
+    monkeypatch.setattr(server, "list_profiles", lambda: [old])
+    body = client.get("/api/profiles").json()
+    assert len(body) == 1
+    assert body[0]["cache_key"] == "ck-old"
     assert body[0]["notes"] == [note.model_dump()]
 
 

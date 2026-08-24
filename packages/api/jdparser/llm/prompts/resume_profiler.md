@@ -7,6 +7,9 @@ Rules:
 - `education` MUST list EVERY degree, diploma, or formal credential stated in the resume, each as a concise string (e.g. "M.S. Computer Science, MIT", "B.S. Mathematics"). Look in any Education/Academic section and inline mentions. If the resume truly states no education, use an empty list — but do not overlook a degree that is present.
 - `roles` are normalized target roles (synonyms welcome); `skills` are concrete, named skills the resume actually demonstrates.
 - `remote_preference` and `employment_types` reflect stated or strongly implied preferences; default to "any" / a sensible set only when the text gives a signal.
+- `evidence` is the fit-judge's ONLY window into the resume — it cannot reread the original text. Starving this list forces it to cite leftover theme quotes that do not actually prove a requirement.
 - Every non-trivial claim (seniority, years of experience, a key skill, a domain) MUST have a corresponding `evidence` entry whose `source_quote` is a VERBATIM span copied from the resume — do not paraphrase the quote.
+- Also copy EVERY accomplishment / project / leadership bullet that names a tool, a deliverable, or a team act — one `evidence` entry per distinct claim, not one per theme. A typical mid-career resume should produce on the order of one entry per bullet, not 3–4 career-summary quotes.
+- Prefer spans that name the tool AND the work (e.g. "Wrote data-processing pipelines in Python and SQL over PostgreSQL") over a theme label with no tool ("Financial Engineering Experience").
 - Do NOT fabricate skills, roles, or experience that the resume does not support. If the text does not support a claim, omit it.
 - Output ONLY fields defined by the ResumeProfile schema.

@@ -3,7 +3,7 @@
 import hashlib
 from pathlib import Path
 
-from jdparser.cache.fingerprint import compute_fingerprint
+from jdparser.cache.fingerprint import compute_fingerprint, make_cache_key
 from jdparser.config import PARSER_VERSION, SCHEMA_VERSION
 
 
@@ -36,8 +36,10 @@ def test_cache_key_matches_formula_and_version_bump(tmp_path: Path) -> None:
     ).hexdigest()
 
     assert fp.cache_key == expected_key
+    assert fp.cache_key == make_cache_key(text, PARSER_VERSION, SCHEMA_VERSION)
 
     bumped_key = hashlib.sha256(
         f"{text_hash}:9.9.9:{SCHEMA_VERSION}".encode("utf-8")
     ).hexdigest()
     assert bumped_key != fp.cache_key
+    assert make_cache_key(text, "9.9.9", SCHEMA_VERSION) == bumped_key

@@ -17,7 +17,7 @@ from uuid import uuid4
 from langgraph.types import Send
 
 from jdparser.cache.fingerprint import compute_fingerprint
-from jdparser.cache.store import get_profile, put_profile
+from jdparser.cache.store import get_profile, inherit_from_prior, put_profile, retire_superseded
 from jdparser.config import (
     CONFIDENCE_THRESHOLD,
     MIN_JD_CHARS,
@@ -92,10 +92,13 @@ def load_or_parse_profile(state: JobMatchState) -> NodeResult:
         created_at=now_iso(),
         updated_at=now_iso(),
     )
+    rec, prior = inherit_from_prior(rec, text)
     put_profile(rec)                                    # atomic write
+    retire_superseded(prior, rec.cache_key)
     return {
         "resume_profile": profile.model_dump(),
         "resume_cache_hit": False,
+        "candidate_notes": [n.model_dump() for n in rec.notes],
     }
 
 

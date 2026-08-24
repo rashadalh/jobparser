@@ -245,8 +245,11 @@ class ResumeProfile(BaseModel):
     evidence: list[ResumeEvidence]
 ```
 
-Invariant: every non-trivial claim the profiler asserts (seniority, years, a key
-skill) SHOULD have a corresponding `evidence` entry. Serialization: `.model_dump()`.
+Invariant: `evidence` is the fit-judge's only window into the resume. Every
+non-trivial claim AND every accomplishment/project/leadership bullet that names
+a tool, deliverable, or team act MUST have a corresponding `evidence` entry
+with a verbatim `source_quote`. Do not collapse a career into a handful of
+theme quotes. Serialization: `.model_dump()`.
 
 ### 3.4 `AdzunaQuery` (logic — deepseek-v4-flash-latest) — **closed schema**
 
@@ -282,8 +285,8 @@ is `list[AdzunaQuery]`; the planner returns ≤ `SEARCH_PLAN_MAX_QUERIES` (§6.1
 
 ```python
 class JobRequirements(BaseModel):
-    required_skills: list[str]
-    preferred_skills: list[str]
+    required_skills: list[str]             # named skills/tools/capabilities, NOT whole qualification bullets
+    preferred_skills: list[str]            # same: split compound "Who You Are" bullets into distinct items
     min_years_experience: float | None
     education: list[str]                   # e.g. ["BS Computer Science"]
     education_required: bool
@@ -322,7 +325,10 @@ class FitJudgment(BaseModel):
 
 Invariant: if `decision == "qualified"`, every entry in `JobRequirements.required_skills`
 the judge counts as met MUST appear in `met_requirements` with a non-empty
-`evidence_quote`; `failed_dealbreakers` MUST be empty; `thematic_fit` MUST be true.
+`evidence_quote` that actually supports that requirement (a shared word or a
+leftover theme quote is not support; unsupported conjuncts go in
+`missing_hard_requirements`); `failed_dealbreakers` MUST be empty;
+`thematic_fit` MUST be true.
 
 ### 3.7 `StoredResumeProfile` (durable cache record — JSON file)
 
@@ -397,10 +403,13 @@ class Fingerprint(BaseModel):
     cache_key: str    # sha256(f"{text_hash}:{PARSER_VERSION}:{SCHEMA_VERSION}"), hex
 ```
 
-`cache_key` deliberately incorporates parser/schema versions so a version bump
-invalidates the cache. It does **not** include `model` (the overview specifies
-"cached by text hash and parser version"); the producing model is recorded in
-`StoredResumeProfile.model` for audit only.
+`cache_key` incorporates parser/schema versions so a version bump is a cache
+miss and the profiler re-runs. It does **not** include `model` (the overview
+specifies "cached by text hash and parser version"); the producing model is
+recorded in `StoredResumeProfile.model` for audit only. The prior file stays
+listed (`GET /api/profiles` does not filter by version). A re-parse of the same
+text inherits `id` / `created_at` / `notes` from the prior file and then
+retires it.
 
 ### 3.9 `EvaluatedJob` (per-job result; appended to `evaluated_jobs`)
 
@@ -502,8 +511,9 @@ class ErrorRecord(BaseModel):
 ### Resume-profile cache (`data/profiles/{cache_key}.json`)
 - **Enters:** on a cache **miss**, after the profiler LLM returns a valid
   `ResumeProfile`, `put_profile()` writes the file (create or overwrite same key).
-- **Exits:** only by explicit deletion or a `cache_key` change (parser/schema bump
-  ⇒ new key ⇒ old file orphaned, harmless). Never auto-evicted.
+- **Exits:** explicit deletion, or retirement of a superseded version after the
+  same resume text is re-parsed under a new `cache_key` (notes move with it).
+  A version bump alone does **not** hide or delete the file. Never auto-evicted.
 - **In-place mutation:** a write to an existing `cache_key` overwrites atomically
   (write temp file, `os.replace`). `put_profile()` itself preserves `created_at` —
   if a file already exists at the key it reads the existing `created_at` and keeps it,
@@ -743,7 +753,7 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | `FETCH_TIMEOUT_S` | `20` | seconds; httpx request timeout |
 | `PLAYWRIGHT_TIMEOUT_MS` | `30000` | milliseconds; Playwright nav/render timeout |
 | `HTTP_MAX_RETRIES` | `2` | count; httpx retry attempts on 5xx/timeout |
-| `PARSER_VERSION` | `"1.1.0"` | semver; resume parsing logic version (1.1.0: total_years_experience = whole-career span, not a field-specific figure). Part of the cache key — a bump invalidates cached profiles so they re-parse. |
+| `PARSER_VERSION` | `"1.2.0"` | semver; resume parsing logic version (1.1.0: total_years_experience = whole-career span, not a field-specific figure; 1.2.0: `evidence[]` is per-bullet, not a handful of theme summaries). Part of the cache key — a bump invalidates cached profiles so they re-parse. |
 | `SCHEMA_VERSION` | `"1.2.0"` | semver; ResumeProfile schema version (1.1.0 added `education`; 1.2.0 added `work_periods` for deterministic years). A bump invalidates cached profiles so they re-parse. |
 
 ### 6.2 Frontend constants — `web/lib/api.ts`
@@ -751,7 +761,7 @@ the **single source of truth**; there is no push/streaming channel in MVP.
 | Name | Value | Unit |
 |---|---|---|
 | `POLL_INTERVAL_MS` | `2000` | milliseconds; run-status poll cadence |
-| `POLL_TIMEOUT_MS` | `300000` | milliseconds (5 min); give-up ceiling for a run |
+| `POLL_TIMEOUT_MS` | `300000` | milliseconds (5 min); when to show the "still working" banner. Polling continues until the run is `completed`/`failed`. |
 | `NEXT_PUBLIC_API_BASE` | `"http://localhost:8000"` | env var; API origin |
 
 ### 6.3 LLM constants & model routing — `config.py`, `llm/client.py`

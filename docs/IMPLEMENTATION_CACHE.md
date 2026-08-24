@@ -61,7 +61,11 @@ def compute_fingerprint(file_path: str, text: str) -> Fingerprint:
 ```
 
 Invariant: identical text + same parser/schema versions ⇒ identical `cache_key`.
-A `PARSER_VERSION`/`SCHEMA_VERSION` bump ⇒ new key ⇒ cache miss (old file orphaned).
+A `PARSER_VERSION`/`SCHEMA_VERSION` bump ⇒ new key ⇒ cache miss so the profiler
+re-runs. The old file stays listed; `find_prior_profile(text)` reconstructs the
+historical key from each file's stored versions and `inherit_from_prior` copies
+`id` / `created_at` / `notes` onto the new record, then `retire_superseded`
+removes the old file.
 
 ## `cache/store.py`
 
