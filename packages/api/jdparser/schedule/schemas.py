@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 DayLockStatus = Literal["running", "completed", "failed"]
 ScheduleStatus = Literal["completed", "skipped", "failed"]
@@ -36,8 +36,8 @@ class NotifiedJob(BaseModel):
 
 
 class NotifiedSet(BaseModel):
-    jobs: dict[str, NotifiedJob]  # keyed by job_id
-    urls: dict[str, str]          # final_url → job_id; omits None urls
+    jobs: dict[str, NotifiedJob] = Field(default_factory=dict)  # keyed by job_id
+    urls: dict[str, str] = Field(default_factory=dict)          # final_url → job_id; omits None urls
     updated_at: str
 
 
