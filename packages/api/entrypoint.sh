@@ -33,4 +33,7 @@ while [ ! -e "$socket" ]; do
     sleep 0.1
 done
 
+if [ -n "${AWS_LAMBDA_RUNTIME_API:-}" ]; then
+  exec /app/.venv/bin/python -m jdparser.schedule.bootstrap
+fi
 exec "$@"
