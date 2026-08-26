@@ -6,4 +6,4 @@ Feature planes that sit next to the root product contract (`/PLAN.md`, `/SPEC.md
 
 | Plane | Status | What |
 |---|---|---|
-| [`auto-job-recommendations/`](auto-job-recommendations/PLAN.md) | planned | Daily 07:00 America/Chicago search → S3 archive → Telegram recs |
+| [`auto-job-recommendations/`](auto-job-recommendations/PLAN.md) | code complete; live invoke not run | Daily 07:00 America/Chicago search → S3 archive → Telegram recs |
