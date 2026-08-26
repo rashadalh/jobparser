@@ -33,8 +33,10 @@ next-env.d.ts
 infra/.terraform/
 infra/*.tfstate
 infra/*.tfstate.*
+infra/tfplan
 infra/*.tfplan
 infra/.build/
+infra/lambda/**/*.zip
 infra/terraform.tfvars
 infra/*.secret
 infra/*.secret.json
