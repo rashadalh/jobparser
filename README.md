@@ -145,6 +145,7 @@ The language work runs on DeepSeek V4 Flash (latest) through OpenRouter.
 - `docs/system-overview.html` is an illustrated walkthrough of the pipeline.
 - `PLAN.md` covers what the project is trying to do, and `SPEC.md` is the detailed
   contract every component is built against.
+- Daily Telegram recommendations (planned): `specs/auto-job-recommendations/`.
 - `docs/IMPLEMENTATION_*.md` explain each area in depth, and every package under
   `packages/api/jdparser/` has a README describing what lives there.
 

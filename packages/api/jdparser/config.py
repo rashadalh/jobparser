@@ -110,12 +110,18 @@ MODEL_EXTRACT: str = "~deepseek/deepseek-v4-flash-latest"   # text extraction (j
 LLM_MAX_RETRIES: int = 2                     # instructor re-ask count on validation failure
 
 # --- Durable flat-file stores (SPEC §3.7/§3.9; created at import) ------------
-DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR: Path = Path(os.getenv("JDPARSER_DATA_DIR", str(Path(__file__).resolve().parent.parent / "data")))
 PROFILES_DIR: Path = DATA_DIR / "profiles"   # resume cache:  {cache_key}.json
 RUNS_DIR: Path = DATA_DIR / "runs"           # run records:   {run_id}.json
 UPLOADS_DIR: Path = DATA_DIR / "uploads"     # saved uploads: {run_id}.{ext}
 for _d in (PROFILES_DIR, RUNS_DIR, UPLOADS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+# --- Daily schedule plane (specs/auto-job-recommendations/SPEC.md §6) --------
+SCHEDULE_TZ: str = "America/Chicago"
+SCHEDULE_LOCK_STALE_S: int = 900             # seconds; 15 min; equal to Lambda timeout
+TELEGRAM_CHUNK_CHARS: int = 3500             # Python len(str); Bot API cap is 4096
+TELEGRAM_SEND_TIMEOUT_S: int = 10            # seconds; urlopen timeout
 
 # --- Secrets (from env; .env gitignored) -------------------------------------
 OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
