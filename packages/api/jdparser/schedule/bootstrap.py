@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from jdparser.config import JDParserError
+from jdparser.schedule.secrets import load_secret_object
 
 _RUNTIME_KEYS = ("OPENROUTER_API_KEY", "ADZUNA_APP_ID", "ADZUNA_APP_KEY")
 
@@ -28,22 +28,7 @@ def load_runtime_secrets(client: Any | None = None) -> None:
         import boto3  # lazy: tests inject a fake client
 
         client = boto3.client("secretsmanager")
-    try:
-        payload = client.get_secret_value(SecretId=arn)
-        raw = payload.get("SecretString") or ""
-        parsed: object = json.loads(raw) if raw else {}
-    except JDParserError:
-        raise
-    except Exception as exc:
-        raise JDParserError(
-            code="SCHEDULE_SECRET_MISSING",
-            message="runtime secret unavailable",
-        ) from exc
-    if not isinstance(parsed, dict):
-        raise JDParserError(
-            code="SCHEDULE_SECRET_MISSING",
-            message="runtime secret JSON is not an object",
-        )
+    parsed = load_secret_object(client, arn, label="runtime")
     missing: list[str] = []
     for key in _RUNTIME_KEYS:
         val = parsed.get(key)
