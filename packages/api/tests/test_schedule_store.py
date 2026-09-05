@@ -29,6 +29,7 @@ from jdparser.schedule.store import (
     ScheduleStore,
     day_lock_key,
     parse_resume_suffix,
+    resume_object_key,
     s3_store_from_env,
 )
 
@@ -110,8 +111,8 @@ class MemoryScheduleStore:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
 
-    def get_resume(self) -> tuple[bytes, str]:
-        body = self.objects.get(RESUME_KEY)
+    def get_resume(self, key: str = RESUME_KEY) -> tuple[bytes, str]:
+        body = self.objects.get(key)
         if body is None:
             raise JDParserError(code="SCHEDULE_RESUME_MISSING")
         return body, parse_resume_suffix(body)
@@ -223,6 +224,28 @@ def test_get_resume_sniffs_pdf_and_ignores_content_type() -> None:
     body, suffix = store.get_resume()
     assert body == b"%PDF-1.7 bytes"
     assert suffix == ".pdf"
+
+
+def test_get_resume_alternate_key() -> None:
+    client = FakeS3Client()
+    client.objects["resume/quant-dev"] = b"%PDF-alt"
+    store = S3ScheduleStore(client, "test-bucket")
+    body, suffix = store.get_resume("resume/quant-dev")
+    assert body == b"%PDF-alt"
+    assert suffix == ".pdf"
+    with pytest.raises(JDParserError) as ei:
+        store.get_resume()
+    assert ei.value.code == "SCHEDULE_RESUME_MISSING"
+
+
+def test_resume_object_key_defaults_and_rejects_path_escape() -> None:
+    assert resume_object_key(None) == RESUME_KEY
+    assert resume_object_key("") == RESUME_KEY
+    assert resume_object_key("quant-dev") == "resume/quant-dev"
+    assert resume_object_key("resume/quant-dev") == "resume/quant-dev"
+    with pytest.raises(JDParserError) as ei:
+        resume_object_key("../secret")
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
 
 
 def test_default_config_when_missing(

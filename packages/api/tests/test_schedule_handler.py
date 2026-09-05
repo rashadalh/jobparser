@@ -25,6 +25,7 @@ from jdparser.schedule.handler import (
     schedule_date_from_event,
     search_config_from_event,
     search_slug_from_event,
+    resume_key_from_event,
 )
 from jdparser.schedule.schemas import (
     ArchivedRun,
@@ -50,6 +51,7 @@ class FakeStore:
     def __init__(self) -> None:
         self.locks: dict[str, DayLock] = {}
         self.resume: tuple[bytes, str] | None = (b"%PDF-1.4\nresume", ".pdf")
+        self.resume_key_requested: str | None = None
         self.config = ScheduleSearchConfig()
         self.archives: dict[str, ArchivedRun] = {}
         self.notified = NotifiedSet(
@@ -58,7 +60,8 @@ class FakeStore:
         self.hydrate_dirs: list[Path] = []
         self.persist_dirs: list[Path] = []
 
-    def get_resume(self) -> tuple[bytes, str]:
+    def get_resume(self, key: str = "resume/current") -> tuple[bytes, str]:
+        self.resume_key_requested = key
         if self.resume is None:
             raise JDParserError(code="SCHEDULE_RESUME_MISSING")
         return self.resume
@@ -555,3 +558,24 @@ def test_schedule_date_uses_chicago_tz_not_utc_prefix() -> None:
     chicago = utc.astimezone(ZoneInfo("America/Chicago")).date().isoformat()
     assert chicago == "2022-03-22"
     assert utc.date().isoformat() == "2022-03-23"
+
+
+def test_resume_key_from_event() -> None:
+    assert resume_key_from_event({}) == "resume/current"
+    assert resume_key_from_event({"resume_key": "quant-dev"}) == "resume/quant-dev"
+    assert resume_key_from_event({"resume_key": "resume/quant-dev"}) == "resume/quant-dev"
+    with pytest.raises(JDParserError) as ei:
+        resume_key_from_event({"resume_key": "../etc"})
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
+
+
+def test_resume_key_reaches_store(patched_dirs: Path) -> None:
+    store = FakeStore()
+    result = _run(
+        store=store,
+        send=[],
+        invoke=_Recorder(),
+        event={**EVENT, "resume_key": "quant-dev"},
+    )
+    assert result.status == "completed"
+    assert store.resume_key_requested == "resume/quant-dev"

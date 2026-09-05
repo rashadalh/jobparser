@@ -34,7 +34,12 @@ from jdparser.schedule.schemas import (
     ScheduleResult,
     ScheduleSearchConfig,
 )
-from jdparser.schedule.store import ScheduleStore, s3_store_from_env, validate_search_slug
+from jdparser.schedule.store import (
+    ScheduleStore,
+    resume_object_key,
+    s3_store_from_env,
+    validate_search_slug,
+)
 
 log = logging.getLogger(__name__)
 
@@ -142,6 +147,13 @@ def search_config_from_event(event: dict[str, Any] | None) -> ScheduleSearchConf
             message=f"invalid max_days_old: {raw!r}",
         ) from exc
     return cfg.model_copy(update={"max_days_old": None if days <= 0 else days})
+
+
+def resume_key_from_event(event: dict[str, Any] | None) -> str:
+    raw = None if event is None else event.get("resume_key")
+    if raw is None or raw == "":
+        return resume_object_key(None)
+    return resume_object_key(str(raw))
 
 
 def partition_evaluated(
@@ -313,7 +325,7 @@ def run_scheduled_search(
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
         try:
-            body, suffix = store.get_resume()
+            body, suffix = store.get_resume(resume_key_from_event(event))
         except JDParserError:
             _log_phase("resume", schedule_date=schedule_date, run_id=run_id, ok=False)
             raise

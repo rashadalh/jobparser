@@ -27,7 +27,7 @@ _SEARCH_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 class ScheduleStore(Protocol):
-    def get_resume(self) -> tuple[bytes, str]: ...
+    def get_resume(self, key: str = RESUME_KEY) -> tuple[bytes, str]: ...
     def get_search_config(self) -> ScheduleSearchConfig: ...
     def hydrate_profiles(self, dest_dir: Path) -> int: ...
     def persist_profiles(self, src_dir: Path) -> int: ...
@@ -64,12 +64,24 @@ def _validate_schedule_date(schedule_date: str) -> str:
 
 def validate_search_slug(search: str) -> str:
     """Path-safe lock-key segment. Cities live in the event / Terraform, not here."""
-    if not _SEARCH_SLUG.fullmatch(search):
+    return _path_slug(search, label="search")
+
+
+def resume_object_key(raw: str | None = None) -> str:
+    """Default resume/current. Event resume_key may name another object under resume/."""
+    if raw is None or raw == "":
+        return RESUME_KEY
+    name = raw[len("resume/") :] if raw.startswith("resume/") else raw
+    return f"resume/{_path_slug(name, label='resume_key')}"
+
+
+def _path_slug(value: str, *, label: str) -> str:
+    if not _SEARCH_SLUG.fullmatch(value):
         raise JDParserError(
             code="SCHEDULE_CONFIG_INVALID",
-            message=f"invalid search: {search}",
+            message=f"invalid {label}: {value}",
         )
-    return search
+    return value
 
 
 def day_lock_key(schedule_date: str, search: str | None = None) -> str:
@@ -173,8 +185,8 @@ class S3ScheduleStore:
                 raise JDParserError(code="SCHEDULE_LOCK_HELD") from exc
             raise _s3_error(exc) from exc
 
-    def get_resume(self) -> tuple[bytes, str]:
-        body = self._get_bytes(RESUME_KEY)
+    def get_resume(self, key: str = RESUME_KEY) -> tuple[bytes, str]:
+        body = self._get_bytes(key)
         if body is None:
             raise JDParserError(code="SCHEDULE_RESUME_MISSING")
         return body, parse_resume_suffix(body)
