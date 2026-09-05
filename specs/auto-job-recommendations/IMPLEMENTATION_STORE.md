@@ -35,16 +35,16 @@ from pydantic import BaseModel, Field
 
 | Key | Body |
 |---|---|
-| `resume/current` | raw bytes |
+| `resume/current` | raw bytes (default; `resume/{slug}` if `resume_key` is set) |
 | `config/search.json` | `ScheduleSearchConfig` |
 | `profiles/{cache_key}.json` | `StoredResumeProfile` |
 | `runs/{schedule_date}/{run_id}.json` | `ArchivedRun` |
-| `state/day/{schedule_date}.json` | `DayLock` |
+| `state/day/{schedule_date}.json` | `DayLock` (no `search` on the event) |
+| `state/day/{schedule_date}/{search}.json` | `DayLock` (per-search partition) |
 | `state/notified.json` | `NotifiedSet` |
 
-`schedule_date` / `cache_key` / `run_id` are path-safe (`[0-9a-f-]` / ISO date).
-Do not interpolate unsanitized event strings into keys; validate
-`schedule_date` with `datetime.date.fromisoformat`.
+`schedule_date` is an ISO date. `search` / resume slugs are `[a-z0-9]+(?:-[a-z0-9]+)*`.
+Do not interpolate unsanitized event strings into keys.
 
 ## `store.py`
 
@@ -54,13 +54,17 @@ def parse_resume_suffix(body: bytes) -> str:
 
 class S3ScheduleStore:
     def __init__(self, client: Any, bucket: str) -> None: ...
-    def get_resume(self) -> tuple[bytes, str]: ...
+    def get_resume(self, key: str = RESUME_KEY) -> tuple[bytes, str]: ...
     def get_search_config(self) -> ScheduleSearchConfig: ...
     def hydrate_profiles(self, dest_dir: Path) -> int: ...
     def persist_profiles(self, src_dir: Path) -> int: ...
     def put_archived_run(self, rec: ArchivedRun) -> str: ...
-    def get_day_lock(self, schedule_date: str) -> DayLock | None: ...
-    def put_day_lock(self, lock: DayLock, *, create_only: bool) -> None: ...
+    def get_day_lock(
+        self, schedule_date: str, search: str | None = None
+    ) -> DayLock | None: ...
+    def put_day_lock(
+        self, lock: DayLock, *, create_only: bool, search: str | None = None
+    ) -> None: ...
     def get_notified(self) -> NotifiedSet: ...
     def put_notified(self, ns: NotifiedSet) -> None: ...
 ```
@@ -76,9 +80,9 @@ def s3_store_from_env() -> S3ScheduleStore:
 
 ### `get_resume`
 
-`get_object(Bucket, Key="resume/current")`. `NoSuchKey` / 404 →
+`get_object(Bucket, Key=key)` with default `resume/current`. `NoSuchKey` / 404 →
 `JDParserError("SCHEDULE_RESUME_MISSING")`. Suffix via `parse_resume_suffix(body)`
-(SPEC §3.6). Ignore Content-Type.
+(SPEC §3.6). Ignore Content-Type. `resume_object_key` rejects path escape.
 
 ### `get_search_config`
 

@@ -107,10 +107,10 @@ def handler_with_deps(
    `started_at`. Age `>= 900` → takeover (step 5).
 5. `run_id = str(uuid4())`. `put_day_lock(..., create_only=(lock is None))`.
    On `SCHEDULE_LOCK_HELD` → skipped `skip_reason="lock_held"`.
-6. `bytes, suffix = store.get_resume()`. Write to
+6. `bytes, suffix = store.get_resume(resume_key_from_event(event))`. Write to
    `Path(DATA_DIR) / "uploads" / f"{run_id}{suffix}"`.
-7. `cfg = store.get_search_config()`. `max_days_old` `None`/`<=0` → pass `None`
-   into `initial_state`.
+7. `cfg = search_config_from_event(event)` or `store.get_search_config()`.
+   `max_days_old` `None`/`<=0` → pass `None` into `initial_state`.
 8. `store.hydrate_profiles(PROFILES_DIR)` (replaces dest files for listed keys).
 9. `start_run_usage()`. `final = invoke_graph(...)` as SPEC §4.4.
 10. Build `RunRecord` via `partition_evaluated`. On exception: failed

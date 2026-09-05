@@ -18,7 +18,8 @@ Monday: each location, last week. Tuesday–Friday: each location, last 24h.
         ▼
 Lambda (ECR image = packages/api; not uvicorn)
         ├─ day lock   s3://{bucket}/state/day/{schedule_date}.json
-        ├─ resume     s3://{bucket}/resume/current  →  /tmp/jdparser-data/resume
+        │             or s3://{bucket}/state/day/{schedule_date}/{search}.json
+        ├─ resume     s3://{bucket}/resume/current  (or resume/{slug} via event)
         ├─ config     s3://{bucket}/config/search.json
         ├─ hydrate    s3://{bucket}/profiles/*.json →  $JDPARSER_DATA_DIR/profiles
         ├─ graph.invoke  (root SPEC §1 pipeline; same is_qualified gate)
@@ -171,7 +172,9 @@ class DayLock(BaseModel):
 | Exit `completed` | graph **and** notify finished without raise | `status="completed"`, `run_s3_key` set, `new_notified` set |
 | Exit `failed` | hard fail after lock acquired (including notify fail after a completed graph) | `status="failed"`, `error` set; handler then **raises**. Lambda **async retries are 0** (SPEC §6); Scheduler retries only **invoke** failures (IAM/throttle), not handler exceptions. Same-day retry is an operator `lambda invoke` or a later Scheduler delivery that takeovers `failed`. |
 
-No TTL. Objects are not deleted by this plane.
+No TTL. Objects are not deleted by this plane. When `event["search"]` is set,
+the lock key is `state/day/{schedule_date}/{search}.json` instead of
+`state/day/{schedule_date}.json`. The same lifecycle applies per key.
 
 ### 3.4 `NotifiedSet`
 
@@ -282,14 +285,18 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 | Key | Source | Required |
 |---|---|---|
 | `scheduled_time` | Scheduler input `<aws.scheduler.scheduled-time>` | no; default now Chicago |
-| `search` | Manual invoke or Scheduler: `texas` / `new-york` / `chicago` / `boston` | no; omitted = `config/search.json` |
-| `max_days_old` | Manual invoke or Scheduler; integer days (`1` or `7`) | no; omitted = preset default `7` |
+| `search` | Manual invoke or Scheduler: path-safe slug `[a-z0-9]+(?:-[a-z0-9]+)*` | no; omitted = `config/search.json` and the unscoped day lock |
+| `locations` | Manual invoke or Scheduler: list of Adzuna location strings | no; see below |
+| `max_days_old` | Manual invoke or Scheduler; integer days (`1` or `7`) | no; omitted on an event config = model default `7` |
+| `resume_key` | Manual invoke: `current` or `resume/{slug}` | no; default `resume/current` |
 
-`search` selects a location preset. Optional `max_days_old` overrides the
-preset window (`7` last week, `1` last 24 hours). Each preset has its own day
-lock at `state/day/{schedule_date}/{search}.json`, so four location ticks the
-same Chicago day do not skip each other. Unknown `search` or non-integer
-`max_days_old` → `SCHEDULE_CONFIG_INVALID`. Other unknown keys ignored.
+`search` is only the day-lock partition. `locations` and `max_days_old` are
+operator data on the event (Terraform `local.search_schedules`). If the event
+has none of `search`, `locations`, or `max_days_old`, the handler loads
+`config/search.json`. Otherwise locations come from the event (`None` if the
+key is absent: profile-inferred). A fifth city is another schedule row, not a
+Python preset. Invalid `search`, `locations`, `max_days_old`, or `resume_key`
+→ `SCHEDULE_CONFIG_INVALID`. Other unknown keys ignored.
 
 EventBridge Scheduler (gated by `enable_schedule`):
 
@@ -298,8 +305,8 @@ EventBridge Scheduler (gated by `enable_schedule`):
 - No weekend ticks
 
 Reserved concurrency is 1, so the four locations stagger by 16 minutes
-(7:00 / 7:16 / 7:32 / 7:48). The 07:00 Scheduler input always includes
-`search` and `max_days_old`.
+(7:00 / 7:16 / 7:32 / 7:48). Weekday 07:00 and the stagger live in Terraform
+only. The Scheduler input includes `search`, `locations`, and `max_days_old`.
 
 ### 4.1a Runtime secrets (must precede `jdparser.config` import)
 
@@ -425,8 +432,8 @@ Root `/SPEC.md` §6.4 codes still apply inside the graph. This plane adds:
 
 | Code | Raised by | Meaning |
 |---|---|---|
-| `SCHEDULE_RESUME_MISSING` | handler | `resume/current` not in bucket |
-| `SCHEDULE_CONFIG_INVALID` | store | `config/search.json` present but not a valid `ScheduleSearchConfig` |
+| `SCHEDULE_RESUME_MISSING` | handler | named resume object not in bucket |
+| `SCHEDULE_CONFIG_INVALID` | handler / store | bad event slug/locations/days/resume_key, or invalid `config/search.json` |
 | `SCHEDULE_LOCK_HELD` | store | `If-None-Match` lost the race |
 | `SCHEDULE_TELEGRAM_FAILED` | notify | non-2xx or transport error from Bot API |
 | `SCHEDULE_SECRET_MISSING` | handler | secret JSON missing token or chat_id |
@@ -576,8 +583,9 @@ pin). Search image boto3 is 1.43.79.
 - **§7.6 Compose intact.** `docker compose up` still serves FastAPI on 8000;
   `GET /api/health` returns `{"status":"ok"}`. The image entrypoint still
   starts Xvfb + uvicorn when `AWS_LAMBDA_RUNTIME_API` is unset.
-- **§7.7 Resume missing.** Invoke with no `resume/current` raises
-  `SCHEDULE_RESUME_MISSING`, day lock `failed`, no recs message.
+- **§7.7 Resume missing.** Invoke with no object at the chosen resume key
+  (default `resume/current`) raises `SCHEDULE_RESUME_MISSING`, day lock
+  `failed`, no recs message.
 
 Tier 3.5: not required. One tick per day; no intra-tick trajectory.
 
@@ -586,7 +594,9 @@ Tier 3.5: not required. One tick per day; no intra-tick trajectory.
 ## 8. Out of scope
 
 - Next.js / API Gateway / Telegram inbound webhook / bot commands.
-- Multi-user, extra chats, extra resumes (one `resume/current`).
+- Multi-user, extra chats. Recs and alarms share one Telegram chat.
+- Extra resumes beyond objects under `resume/` selected by `resume_key`
+  (default `resume/current`).
 - SQL, DynamoDB, EFS, VPC, NAT.
 - Second job source; country ≠ `ADZUNA_COUNTRY`.
 - Enabling `enable_schedule` in the create-infra apply.
@@ -600,8 +610,8 @@ Tier 3.5: not required. One tick per day; no intra-tick trajectory.
 | Surface | Stub behavior (MVP) | Eventual final form | File |
 |---|---|---|---|
 | LangGraph checkpointer | in-memory `MemorySaver` (lost on freeze) | S3 is the archive, not a tick resume | `graph/build.py` (unchanged) |
-| Resume identity | one S3 object `resume/current` | per-user objects | `schedule/store.py` |
-| Search config | operator-uploaded `config/search.json` | out of this plane (would need web/API) | `schedule/store.py` |
+| Resume identity | default S3 object `resume/current`; `resume_key` may select `resume/{slug}` | per-user objects | `schedule/store.py` |
+| Search config | event `locations` / `max_days_old`, else operator-uploaded `config/search.json` | out of this plane (would need web/API) | `schedule/store.py` |
 | Notified-set eviction | none | TTL / listing-expired | `schedule/store.py` |
 | Telegram commands | none | `/run`, `/status` | — |
 | Schedule state | Terraform `enable_schedule` default false | later apply flips tfvars | `infra/scheduler.tf` |
