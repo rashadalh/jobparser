@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 _RUNTIME_KEYS = ("OPENROUTER_API_KEY", "ADZUNA_APP_ID", "ADZUNA_APP_KEY")
@@ -57,12 +58,20 @@ def load_runtime_secrets(client: Any | None = None) -> None:
         )
 
 
+def ric_python() -> str:
+    """Venv interpreter, not sys.executable.
+
+    uv/venv ``bin/python`` is often a symlink to /usr/local/bin/python. execv of
+    that path drops site-packages, so ``-m awslambdaric`` fails on the system
+    interpreter. ``sys.prefix/bin/python`` keeps the venv.
+    """
+    return str(Path(sys.prefix) / "bin" / "python")
+
+
 def main() -> None:
     load_runtime_secrets()
-    os.execv(
-        sys.executable,
-        ["python", "-m", "awslambdaric", "jdparser.schedule.handler.handler"],
-    )
+    python = ric_python()
+    os.execv(python, [python, "-m", "awslambdaric", "jdparser.schedule.handler.handler"])
 
 
 if __name__ == "__main__":

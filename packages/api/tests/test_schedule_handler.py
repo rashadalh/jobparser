@@ -17,7 +17,7 @@ from jdparser.config import JDParserError, SCHEDULE_LOCK_STALE_S, SCHEDULE_TZ
 from jdparser.graph.nodes import is_qualified
 from jdparser.llm.schemas import RunRecord
 from jdparser.schedule import handler as handler_mod
-from jdparser.schedule.bootstrap import load_runtime_secrets
+from jdparser.schedule.bootstrap import load_runtime_secrets, ric_python
 from jdparser.schedule.handler import (
     handler_with_deps,
     partition_evaluated,
@@ -382,6 +382,12 @@ def test_load_runtime_secrets_maps_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert os.environ["OPENROUTER_API_KEY"] == "or-key"
     assert os.environ["ADZUNA_APP_ID"] == "adz-id"
     assert os.environ["ADZUNA_APP_KEY"] == "adz-key"
+
+
+def test_ric_python_is_venv_bin_not_bare_name() -> None:
+    path = ric_python()
+    assert path.endswith("/bin/python")
+    assert Path(path).name == "python"
 
 
 def test_load_runtime_secrets_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:

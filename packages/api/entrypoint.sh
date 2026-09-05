@@ -15,6 +15,11 @@ set -e
 : "${DISPLAY:=:99}"
 export DISPLAY
 
+# Xvfb will not create /tmp/.X11-unix unless euid is 0 (Lambda is not root).
+# Pre-create it so the socket appears and the wait loop can exit.
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix 2>/dev/null || true
+
 Xvfb "$DISPLAY" -screen 0 1280x1024x24 -nolisten tcp &
 
 # Wait for the socket instead of sleeping and hoping. `set -e` cannot see a backgrounded

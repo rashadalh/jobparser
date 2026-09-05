@@ -108,6 +108,11 @@ MODEL_LOGIC: str = "~deepseek/deepseek-v4-flash-latest"     # logic (profiler / 
 # moment the routing changes. Same slug as MODEL_LOGIC today — the split is routing intent.
 MODEL_EXTRACT: str = "~deepseek/deepseek-v4-flash-latest"   # text extraction (jd_parser / screener)
 LLM_MAX_RETRIES: int = 2                     # instructor re-ask count on validation failure
+# seconds; OpenAI SDK default read timeout is 600s, then retried (max_retries=2) —
+# a hung OpenRouter completion stalls screen_jobs well past the frontend's 300s poll
+# timeout. 90s is enough for a healthy call; a hang then fails that call (screen drops
+# the batch; eval records the job as failed).
+LLM_TIMEOUT_S: float = float(os.getenv("LLM_TIMEOUT_S", "90"))
 
 # --- Durable flat-file stores (SPEC §3.7/§3.9; created at import) ------------
 DATA_DIR: Path = Path(os.getenv("JDPARSER_DATA_DIR", str(Path(__file__).resolve().parent.parent / "data")))
