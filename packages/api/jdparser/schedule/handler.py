@@ -31,6 +31,7 @@ from jdparser.schedule.notify import load_telegram_credentials, notify_new_jobs,
 from jdparser.schedule.schemas import (
     ArchivedRun,
     DayLock,
+    SEARCH_PRESETS,
     ScheduleResult,
     ScheduleSearchConfig,
 )
@@ -93,6 +94,38 @@ def schedule_date_from_event(event: dict[str, Any] | None) -> str:
         value = datetime.now(tz).date().isoformat()
     date.fromisoformat(value)
     return value
+
+
+def search_preset_from_event(event: dict[str, Any] | None) -> str | None:
+    """Named location preset. None = S3 config/search.json (or defaults)."""
+    raw = None if event is None else event.get("search")
+    if raw is None or raw == "":
+        return None
+    key = str(raw)
+    if key not in SEARCH_PRESETS:
+        raise JDParserError(code="SCHEDULE_CONFIG_INVALID", message=f"unknown search: {key}")
+    return key
+
+
+def search_config_from_event(event: dict[str, Any] | None) -> ScheduleSearchConfig | None:
+    """Preset plus optional max_days_old override (1 = last 24h, 7 = last week)."""
+    search = search_preset_from_event(event)
+    if search is None:
+        return None
+    cfg = SEARCH_PRESETS[search]
+    if event is None or "max_days_old" not in event:
+        return cfg
+    raw = event["max_days_old"]
+    if raw is None or raw == "":
+        return cfg.model_copy(update={"max_days_old": None})
+    try:
+        days = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise JDParserError(
+            code="SCHEDULE_CONFIG_INVALID",
+            message=f"invalid max_days_old: {raw!r}",
+        ) from exc
+    return cfg.model_copy(update={"max_days_old": None if days <= 0 else days})
 
 
 def partition_evaluated(
@@ -174,6 +207,7 @@ def _fail_lock(
     now_iso_s: str,
     error: str,
     run_s3_key: str | None,
+    search: str | None = None,
 ) -> None:
     store.put_day_lock(
         DayLock(
@@ -186,6 +220,7 @@ def _fail_lock(
             error=error,
         ),
         create_only=False,
+        search=search,
     )
 
 
@@ -198,7 +233,8 @@ def run_scheduled_search(
     now_iso: str,
 ) -> ScheduleResult:
     schedule_date = schedule_date_from_event(event)
-    lock = store.get_day_lock(schedule_date)
+    search = search_preset_from_event(event)
+    lock = store.get_day_lock(schedule_date, search=search)
 
     if lock is not None and lock.status == "completed":
         _log_phase("lock", schedule_date=schedule_date, run_id=lock.run_id, ok=True)
@@ -236,6 +272,7 @@ def run_scheduled_search(
                 updated_at=now_iso,
             ),
             create_only=(lock is None),
+            search=search,
         )
     except JDParserError as exc:
         if exc.code == "SCHEDULE_LOCK_HELD":
@@ -268,7 +305,9 @@ def run_scheduled_search(
         resume_path.write_bytes(body)
         _log_phase("resume", schedule_date=schedule_date, run_id=run_id, ok=True)
 
-        cfg = store.get_search_config()
+        cfg = search_config_from_event(event)
+        if cfg is None:
+            cfg = store.get_search_config()
         store.hydrate_profiles(PROFILES_DIR)
 
         usage = start_run_usage()
@@ -337,6 +376,7 @@ def run_scheduled_search(
                 new_notified=new_notified,
             ),
             create_only=False,
+            search=search,
         )
         _log_phase("done", schedule_date=schedule_date, run_id=run_id, ok=True)
         return ScheduleResult(
@@ -357,6 +397,7 @@ def run_scheduled_search(
                 now_iso_s=now_iso,
                 error=str(exc),
                 run_s3_key=key,
+                search=search,
             )
         except Exception:
             log.exception("failed to write failed day lock")

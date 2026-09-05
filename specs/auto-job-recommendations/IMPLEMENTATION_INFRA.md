@@ -155,17 +155,27 @@ Env: `SCHEDULE_BUCKET`, `RUNTIME_SECRET_ARN`, `TELEGRAM_SECRET_ARN`,
 
 ### Scheduler — `scheduler.tf`
 
-`aws_scheduler_schedule` name `{prefix}-daily-0700`:
+Eight `aws_scheduler_schedule.search` ticks (`for_each`), timezone
+`America/Chicago`, `state = var.enable_schedule ? "ENABLED" : "DISABLED"`:
+
+- Monday last week: `cron({0,16,32,48} 7 ? * MON *)` for texas / new-york /
+  chicago / boston, payload `search` + `max_days_old=7`
+- Tuesday–Friday last 24h: `cron({0,16,32,48} 7 ? * TUE-FRI *)`, same
+  locations, `max_days_old=1`
+
+16-minute stagger matches `LAMBDA_TIMEOUT_S` so reserved concurrency 1 does
+not throttle. No weekend ticks.
 
 ```
-schedule_expression          = "cron(0 7 * * ? *)"
-schedule_expression_timezone = "America/Chicago"
-state                        = var.enable_schedule ? "ENABLED" : "DISABLED"
 flexible_time_window { mode = "OFF" }
 target {
   arn      = aws_lambda_function.search.arn
   role_arn = aws_iam_role.scheduler.arn
-  input    = jsonencode({ scheduled_time = "<aws.scheduler.scheduled-time>" })
+  input    = jsonencode({
+    scheduled_time = "<aws.scheduler.scheduled-time>"
+    search         = ...
+    max_days_old   = ...
+  })
   retry_policy {
     maximum_event_age_in_seconds = 3600    # SCHEDULER_EVENT_AGE_S
     maximum_retry_attempts       = 2       # SCHEDULER_RETRY_ATTEMPTS (extra after first)
@@ -174,13 +184,11 @@ target {
 }
 ```
 
-`aws_lambda_permission` for `scheduler.amazonaws.com` on the search function,
-`source_arn` = schedule arn.
+`aws_lambda_permission` per schedule (`for_each`) for `scheduler.amazonaws.com`.
 
 SQS policy allowing EventBridge **Scheduler** service to `SendMessage` to the
-DLQ with `aws:SourceArn` = schedule arn. (Service principal
-`scheduler.amazonaws.com`. Verify before relying if a plan error names a
-different principal; fix the doc + policy together.)
+DLQ with `aws:SourceArn` = the eight schedule ARNs. (Service principal
+`scheduler.amazonaws.com`.)
 
 ### Alarms — `alarms.tf`
 
@@ -188,11 +196,11 @@ different principal; fix the doc + policy together.)
   `EvaluationPeriods=5`, `Statistic=Sum`), function name
 - `{prefix}-search-dlq`: SQS `ApproximateNumberOfMessagesVisible` > 0 on DLQ
 - `{prefix}-search-stale`: Lambda `Invocations` `Statistic=Sum`, `Period=3600`,
-  `EvaluationPeriods=26`, `Threshold=1`, `LessThanThreshold`,
+  `EvaluationPeriods=80`, `Threshold=1`, `LessThanThreshold`,
   `treat_missing_data = "breaching"` (a never-invoked function emits no
   datapoints; default `missing` would stay INSUFFICIENT_DATA). **`count = 1`
-  only when `var.enable_schedule`**. 26 h is "missed the 07:00 tick plus slack
-  through the next UTC hour," not a 24 h period (DST / invoke delay).
+  only when `var.enable_schedule`**. 80 h covers the Friday–Monday gap; a
+  missed midweek tick is the error/DLQ alarms.
 
 All alarm actions = SNS topic `{prefix}-alerts` (always created).
 

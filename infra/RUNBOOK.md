@@ -94,19 +94,29 @@ aws s3 cp config/search.json "s3://${BUCKET}/config/search.json" \
 
 ## 5. Manual invoke
 
-Empty payload uses now in `America/Chicago` for `schedule_date`.
+Empty payload uses now in `America/Chicago` for `schedule_date` and
+`config/search.json` (defaults if missing).
+
+Named location presets. Last week is the default (`max_days_old=7`). Last 24
+hours is `"max_days_old":1`. Each location has its own day lock, so you can
+run more than one the same day:
 
 ```bash
-aws lambda invoke \
-  --function-name "$(terraform output -raw search_function_name)" \
-  --cli-binary-format raw-in-base64-out \
-  --payload '{}' \
-  --region "$AWS_REGION" \
-  --profile "$AWS_PROFILE" \
-  /tmp/out.json && cat /tmp/out.json
+FN="$(terraform output -raw search_function_name)"
+
+# (1) Texas, last week
+aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out \
+  --cli-read-timeout 900 --payload '{"search":"texas"}' \
+  --region "$AWS_REGION" --profile "$AWS_PROFILE" /tmp/out.json && cat /tmp/out.json
+
+# (2) New York, NY, last 24 hours
+aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out \
+  --cli-read-timeout 900 --payload '{"search":"new-york","max_days_old":1}' \
+  --region "$AWS_REGION" --profile "$AWS_PROFILE" /tmp/out.json && cat /tmp/out.json
 ```
 
-Expect `ok: true` and `status: completed` (or `skipped` on a same-day repeat).
+Expect `ok: true` and `status: completed` (or `skipped` on a same-day repeat
+of the **same** `search`). A full graph run can take several minutes.
 
 ## 6. Confirm S3 run object + Telegram
 
@@ -121,7 +131,11 @@ go to the chat in the telegram secret (`jdparser {schedule_date}:…`). Alarm
 relay messages (`jdparser alarm:…`) exist only if `enable_telegram_alerts`
 was applied later.
 
-## 7. Pause / resume the 07:00 schedule
+## 7. Pause / resume the weekday 07:00 schedules
+
+Eight EventBridge schedules (four locations × Monday last-week and
+Tue–Fri last-24h). They start at 07:00 America/Chicago and stagger 16 minutes
+because reserved concurrency is 1.
 
 Edit **`terraform.tfvars`** (persist the flag):
 

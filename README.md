@@ -142,10 +142,13 @@ The language work runs on DeepSeek V4 Flash (latest) through OpenRouter.
 
 ## Daily Telegram recommendations
 
-EventBridge Scheduler can run the same matcher at 07:00 America/Chicago. The
-Lambda archives the `RunRecord` to S3 and sends new `is_qualified()` jobs to
-one Telegram chat. The schedule ships **DISABLED**; turn it on in
-`infra/terraform.tfvars` on a later apply, never with a one-shot `-var`.
+EventBridge Scheduler runs the matcher at 07:00 America/Chicago, Monday through
+Friday (no weekend ticks). Monday: each of Texas, New York, Chicago, Boston for
+the last week. Tuesday–Friday: the same four locations for the last 24 hours.
+Reserved concurrency is 1, so the four locations start at 7:00 and stagger by
+16 minutes. The Lambda archives the `RunRecord` to S3 and sends new
+`is_qualified()` jobs to one Telegram chat. Pause with `enable_schedule = false`
+in `infra/terraform.tfvars`, never a one-shot `-var`.
 Operator steps: [`infra/RUNBOOK.md`](infra/RUNBOOK.md). Contract:
 [`specs/auto-job-recommendations/`](specs/auto-job-recommendations/).
 

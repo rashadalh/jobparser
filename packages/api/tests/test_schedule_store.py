@@ -155,16 +155,22 @@ class MemoryScheduleStore:
         self.objects[key] = rec.model_dump_json().encode("utf-8")
         return key
 
-    def get_day_lock(self, schedule_date: str) -> DayLock | None:
+    def get_day_lock(
+        self, schedule_date: str, search: str | None = None
+    ) -> DayLock | None:
         date.fromisoformat(schedule_date)
-        body = self.objects.get(f"state/day/{schedule_date}.json")
+        suffix = f"/{search}" if search else ""
+        body = self.objects.get(f"state/day/{schedule_date}{suffix}.json")
         if body is None:
             return None
         return DayLock.model_validate_json(body)
 
-    def put_day_lock(self, lock: DayLock, *, create_only: bool) -> None:
+    def put_day_lock(
+        self, lock: DayLock, *, create_only: bool, search: str | None = None
+    ) -> None:
         date.fromisoformat(lock.schedule_date)
-        key = f"state/day/{lock.schedule_date}.json"
+        suffix = f"/{search}" if search else ""
+        key = f"state/day/{lock.schedule_date}{suffix}.json"
         if create_only and key in self.objects:
             raise JDParserError(code="SCHEDULE_LOCK_HELD")
         self.objects[key] = lock.model_dump_json().encode("utf-8")
@@ -253,16 +259,18 @@ def test_day_lock_create_only_412(
     assert loaded.run_id == "run-1"
 
 
-def test_day_lock_overwrite_and_missing(
+def test_day_lock_search_preset_is_separate_key(
     store_and_objs: tuple[ScheduleStore, dict[str, bytes]],
 ) -> None:
-    store, _ = store_and_objs
-    assert store.get_day_lock("2026-08-25") is None
-    store.put_day_lock(_day_lock(run_id="run-1"), create_only=True)
-    store.put_day_lock(_day_lock(run_id="run-2"), create_only=False)
-    loaded = store.get_day_lock("2026-08-25")
-    assert loaded is not None
-    assert loaded.run_id == "run-2"
+    store, objs = store_and_objs
+    store.put_day_lock(_day_lock(run_id="run-default"), create_only=True)
+    store.put_day_lock(_day_lock(run_id="run-texas"), create_only=True, search="texas")
+    default = store.get_day_lock("2026-08-25")
+    texas = store.get_day_lock("2026-08-25", search="texas")
+    assert default is not None and default.run_id == "run-default"
+    assert texas is not None and texas.run_id == "run-texas"
+    assert "state/day/2026-08-25.json" in objs
+    assert "state/day/2026-08-25/texas.json" in objs
 
 
 def test_notified_missing_is_empty(

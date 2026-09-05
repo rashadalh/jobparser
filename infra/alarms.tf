@@ -44,14 +44,14 @@ resource "aws_cloudwatch_metric_alarm" "search_stale" {
   count               = var.enable_schedule ? 1 : 0
   alarm_name          = "${var.name_prefix}-search-stale"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 26
+  evaluation_periods  = 80
   metric_name         = "Invocations"
   namespace           = "AWS/Lambda"
   period              = 3600
   statistic           = "Sum"
   threshold           = 1
   treat_missing_data  = "breaching"
-  alarm_description   = "Search Lambda missed the 07:00 America/Chicago tick (plus slack)."
+  alarm_description   = "Search Lambda silent for 80h (covers Fri–Mon weekend; midweek misses use error/DLQ alarms)."
   alarm_actions       = [aws_sns_topic.alerts.arn]
 
   dimensions = {

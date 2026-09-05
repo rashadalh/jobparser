@@ -22,12 +22,15 @@ from jdparser.schedule.handler import (
     handler_with_deps,
     partition_evaluated,
     schedule_date_from_event,
+    search_config_from_event,
+    search_preset_from_event,
 )
 from jdparser.schedule.schemas import (
     ArchivedRun,
     DayLock,
     NotifiedJob,
     NotifiedSet,
+    SEARCH_PRESETS,
     ScheduleSearchConfig,
 )
 from jdparser.schedule.store import ScheduleStore
@@ -35,6 +38,10 @@ from jdparser.schedule.store import ScheduleStore
 NOW = "2026-08-25T12:00:00+00:00"
 EVENT: dict[str, Any] = {"scheduled_time": "2026-08-25T12:00:00Z"}
 SCHEDULE_DATE = "2026-08-25"
+
+
+def _lock_slot(schedule_date: str, search: str | None = None) -> str:
+    return f"{schedule_date}/{search}" if search else schedule_date
 
 
 class FakeStore:
@@ -76,13 +83,18 @@ class FakeStore:
         self.archives[key] = rec
         return key
 
-    def get_day_lock(self, schedule_date: str) -> DayLock | None:
-        return self.locks.get(schedule_date)
+    def get_day_lock(
+        self, schedule_date: str, search: str | None = None
+    ) -> DayLock | None:
+        return self.locks.get(_lock_slot(schedule_date, search))
 
-    def put_day_lock(self, lock: DayLock, *, create_only: bool) -> None:
-        if create_only and lock.schedule_date in self.locks:
+    def put_day_lock(
+        self, lock: DayLock, *, create_only: bool, search: str | None = None
+    ) -> None:
+        slot = _lock_slot(lock.schedule_date, search)
+        if create_only and slot in self.locks:
             raise JDParserError(code="SCHEDULE_LOCK_HELD")
-        self.locks[lock.schedule_date] = lock
+        self.locks[slot] = lock
 
     def get_notified(self) -> NotifiedSet:
         return self.notified
@@ -424,6 +436,78 @@ def test_equal_stale_age_is_takeover_not_in_flight(patched_dirs: Path) -> None:
 def test_fake_store_is_schedule_store() -> None:
     store: ScheduleStore = FakeStore()
     assert store.get_search_config().broaden_search is True
+
+
+def test_search_preset_from_event() -> None:
+    assert search_preset_from_event({}) is None
+    assert search_preset_from_event({"search": ""}) is None
+    assert search_preset_from_event({"search": "texas"}) == "texas"
+    with pytest.raises(JDParserError) as ei:
+        search_preset_from_event({"search": "paris"})
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
+
+
+def test_search_config_from_event_max_days_old() -> None:
+    week = search_config_from_event({"search": "texas"})
+    assert week is not None
+    assert week.locations == ["Texas"]
+    assert week.max_days_old == 7
+    day = search_config_from_event({"search": "new-york", "max_days_old": 1})
+    assert day is not None
+    assert day.locations == ["New York, NY"]
+    assert day.max_days_old == 1
+    with pytest.raises(JDParserError) as ei:
+        search_config_from_event({"search": "texas", "max_days_old": "nope"})
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
+
+
+def test_search_preset_1d_reaches_graph(patched_dirs: Path) -> None:
+    store = FakeStore()
+    invoke = _Recorder()
+    event = {**EVENT, "search": "chicago", "max_days_old": 1}
+    result = _run(store=store, send=[], invoke=invoke, event=event)
+    assert result.status == "completed"
+    cfg = invoke.calls[0][2]
+    assert cfg.locations == ["Chicago, IL"]
+    assert cfg.max_days_old == 1
+
+
+def test_search_preset_overrides_locations(patched_dirs: Path) -> None:
+    store = FakeStore()
+    store.config = ScheduleSearchConfig(locations=["Should Not Use"])
+    invoke = _Recorder()
+    event = {**EVENT, "search": "texas"}
+    result = _run(store=store, send=[], invoke=invoke, event=event)
+    assert result.status == "completed"
+    cfg = invoke.calls[0][2]
+    assert cfg == SEARCH_PRESETS["texas"]
+    assert cfg.locations == ["Texas"]
+    assert cfg.max_days_old == 7
+    assert store.get_day_lock(SCHEDULE_DATE, search="texas") is not None
+    assert store.get_day_lock(SCHEDULE_DATE) is None
+
+
+def test_search_presets_do_not_share_day_lock(patched_dirs: Path) -> None:
+    store = FakeStore()
+    invoke = _Recorder()
+    first = _run(
+        store=store, send=[], invoke=invoke, event={**EVENT, "search": "texas"}
+    )
+    second = _run(
+        store=store, send=[], invoke=invoke, event={**EVENT, "search": "new-york"}
+    )
+    assert first.status == "completed"
+    assert second.status == "completed"
+    assert first.run_id != second.run_id
+    assert len(invoke.calls) == 2
+    assert invoke.calls[0][2].locations == ["Texas"]
+    assert invoke.calls[1][2].locations == ["New York, NY"]
+    texas_again = _run(
+        store=store, send=[], invoke=invoke, event={**EVENT, "search": "texas"}
+    )
+    assert texas_again.status == "skipped"
+    assert texas_again.skip_reason == "already_completed"
+    assert len(invoke.calls) == 2
 
 
 def test_schedule_date_uses_chicago_tz_not_utc_prefix() -> None:

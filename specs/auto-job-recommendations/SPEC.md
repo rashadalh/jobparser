@@ -13,6 +13,7 @@
 
 ```
 EventBridge Scheduler 07:00 America/Chicago (gated by enable_schedule)
+Monday: each location, last week. Tuesday–Friday: each location, last 24h.
         │  input.scheduled_time = <aws.scheduler.scheduled-time>
         ▼
 Lambda (ECR image = packages/api; not uvicorn)
@@ -281,8 +282,24 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 | Key | Source | Required |
 |---|---|---|
 | `scheduled_time` | Scheduler input `<aws.scheduler.scheduled-time>` | no; default now Chicago |
+| `search` | Manual invoke or Scheduler: `texas` / `new-york` / `chicago` / `boston` | no; omitted = `config/search.json` |
+| `max_days_old` | Manual invoke or Scheduler; integer days (`1` or `7`) | no; omitted = preset default `7` |
 
-Unknown keys ignored.
+`search` selects a location preset. Optional `max_days_old` overrides the
+preset window (`7` last week, `1` last 24 hours). Each preset has its own day
+lock at `state/day/{schedule_date}/{search}.json`, so four location ticks the
+same Chicago day do not skip each other. Unknown `search` or non-integer
+`max_days_old` → `SCHEDULE_CONFIG_INVALID`. Other unknown keys ignored.
+
+EventBridge Scheduler (gated by `enable_schedule`):
+
+- Monday 07:00 America/Chicago: each location, `max_days_old=7`
+- Tuesday–Friday 07:00 America/Chicago: each location, `max_days_old=1`
+- No weekend ticks
+
+Reserved concurrency is 1, so the four locations stagger by 16 minutes
+(7:00 / 7:16 / 7:32 / 7:48). The 07:00 Scheduler input always includes
+`search` and `max_days_old`.
 
 ### 4.1a Runtime secrets (must precede `jdparser.config` import)
 
@@ -480,7 +497,8 @@ assigned. Never log secret values.
 | Name | Value | Unit / meaning |
 |---|---|---|
 | `SCHEDULE_TZ` | `"America/Chicago"` | IANA tz; 07:00 wall clock (CST/CDT) |
-| `SCHEDULE_CRON` | `cron(0 7 * * ? *)` | EventBridge Scheduler 6-field cron |
+| `SCHEDULE_CRON_MON` | `cron({0,16,32,48} 7 ? * MON *)` | Monday last-week ticks, staggered 16 min |
+| `SCHEDULE_CRON_WKDAY` | `cron({0,16,32,48} 7 ? * TUE-FRI *)` | Tue–Fri last-24h ticks, same stagger |
 | `SCHEDULE_LOCK_STALE_S` | `900` | seconds; 15 min; **equal** to `LAMBDA_TIMEOUT_S`; age `>=` this → takeover |
 | `LAMBDA_TIMEOUT_S` | `900` | seconds; Lambda max |
 | `LAMBDA_MEMORY_MB` | `3008` | AWS Lambda memory_size (MB, not MiB) |

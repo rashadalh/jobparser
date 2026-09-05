@@ -12,6 +12,7 @@ from jdparser.schedule.schemas import (
     ArchivedRun,
     DayLock,
     NotifiedSet,
+    SEARCH_PRESETS,
     ScheduleSearchConfig,
 )
 
@@ -30,8 +31,12 @@ class ScheduleStore(Protocol):
     def hydrate_profiles(self, dest_dir: Path) -> int: ...
     def persist_profiles(self, src_dir: Path) -> int: ...
     def put_archived_run(self, rec: ArchivedRun) -> str: ...
-    def get_day_lock(self, schedule_date: str) -> DayLock | None: ...
-    def put_day_lock(self, lock: DayLock, *, create_only: bool) -> None: ...
+    def get_day_lock(
+        self, schedule_date: str, search: str | None = None
+    ) -> DayLock | None: ...
+    def put_day_lock(
+        self, lock: DayLock, *, create_only: bool, search: str | None = None
+    ) -> None: ...
     def get_notified(self) -> NotifiedSet: ...
     def put_notified(self, ns: NotifiedSet) -> None: ...
 
@@ -56,8 +61,16 @@ def _validate_schedule_date(schedule_date: str) -> str:
     return schedule_date
 
 
-def _day_lock_key(schedule_date: str) -> str:
-    return f"state/day/{_validate_schedule_date(schedule_date)}.json"
+def _day_lock_key(schedule_date: str, search: str | None = None) -> str:
+    date_s = _validate_schedule_date(schedule_date)
+    if not search:
+        return f"state/day/{date_s}.json"
+    if search not in SEARCH_PRESETS:
+        raise JDParserError(
+            code="SCHEDULE_CONFIG_INVALID",
+            message=f"unknown search: {search}",
+        )
+    return f"state/day/{date_s}/{search}.json"
 
 
 def _run_key(schedule_date: str, run_id: str) -> str:
@@ -230,8 +243,10 @@ class S3ScheduleStore:
         )
         return key
 
-    def get_day_lock(self, schedule_date: str) -> DayLock | None:
-        body = self._get_bytes(_day_lock_key(schedule_date))
+    def get_day_lock(
+        self, schedule_date: str, search: str | None = None
+    ) -> DayLock | None:
+        body = self._get_bytes(_day_lock_key(schedule_date, search))
         if body is None:
             return None
         try:
@@ -239,9 +254,11 @@ class S3ScheduleStore:
         except ValidationError as exc:
             raise JDParserError(code="SCHEDULE_S3", message=str(exc)) from exc
 
-    def put_day_lock(self, lock: DayLock, *, create_only: bool) -> None:
+    def put_day_lock(
+        self, lock: DayLock, *, create_only: bool, search: str | None = None
+    ) -> None:
         self._put_bytes(
-            _day_lock_key(lock.schedule_date),
+            _day_lock_key(lock.schedule_date, search),
             lock.model_dump_json().encode("utf-8"),
             if_none_match=create_only,
             lock_on_412=create_only,

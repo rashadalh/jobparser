@@ -19,8 +19,8 @@ output "repository_url" {
 }
 
 output "schedule_state" {
-  description = "EventBridge Scheduler state (ENABLED or DISABLED)."
-  value       = aws_scheduler_schedule.daily_0700.state
+  description = "EventBridge Scheduler state per search tick (ENABLED or DISABLED)."
+  value       = { for k, s in aws_scheduler_schedule.search : k => s.state }
 }
 
 output "runtime_secret_arn" {
