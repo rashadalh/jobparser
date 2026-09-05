@@ -1,6 +1,7 @@
 """S3 archive I/O for the daily schedule plane — SPEC §3.2–§3.8, §4.2."""
 
 import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any, Protocol
@@ -12,7 +13,6 @@ from jdparser.schedule.schemas import (
     ArchivedRun,
     DayLock,
     NotifiedSet,
-    SEARCH_PRESETS,
     ScheduleSearchConfig,
 )
 
@@ -23,6 +23,7 @@ PROFILES_PREFIX = "profiles/"
 
 _MISSING_CODES = frozenset({"NoSuchKey", "404", "NotFound"})
 _PRECONDITION_CODES = frozenset({"PreconditionFailed", "412"})
+_SEARCH_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 class ScheduleStore(Protocol):
@@ -61,16 +62,22 @@ def _validate_schedule_date(schedule_date: str) -> str:
     return schedule_date
 
 
-def _day_lock_key(schedule_date: str, search: str | None = None) -> str:
+def validate_search_slug(search: str) -> str:
+    """Path-safe lock-key segment. Cities live in the event / Terraform, not here."""
+    if not _SEARCH_SLUG.fullmatch(search):
+        raise JDParserError(
+            code="SCHEDULE_CONFIG_INVALID",
+            message=f"invalid search: {search}",
+        )
+    return search
+
+
+def day_lock_key(schedule_date: str, search: str | None = None) -> str:
     date_s = _validate_schedule_date(schedule_date)
     if not search:
         return f"state/day/{date_s}.json"
-    if search not in SEARCH_PRESETS:
-        raise JDParserError(
-            code="SCHEDULE_CONFIG_INVALID",
-            message=f"unknown search: {search}",
-        )
-    return f"state/day/{date_s}/{search}.json"
+    slug = validate_search_slug(search)
+    return f"state/day/{date_s}/{slug}.json"
 
 
 def _run_key(schedule_date: str, run_id: str) -> str:
@@ -246,7 +253,7 @@ class S3ScheduleStore:
     def get_day_lock(
         self, schedule_date: str, search: str | None = None
     ) -> DayLock | None:
-        body = self._get_bytes(_day_lock_key(schedule_date, search))
+        body = self._get_bytes(day_lock_key(schedule_date, search))
         if body is None:
             return None
         try:
@@ -258,7 +265,7 @@ class S3ScheduleStore:
         self, lock: DayLock, *, create_only: bool, search: str | None = None
     ) -> None:
         self._put_bytes(
-            _day_lock_key(lock.schedule_date, search),
+            day_lock_key(lock.schedule_date, search),
             lock.model_dump_json().encode("utf-8"),
             if_none_match=create_only,
             lock_on_412=create_only,

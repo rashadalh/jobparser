@@ -31,11 +31,10 @@ from jdparser.schedule.notify import load_telegram_credentials, notify_new_jobs,
 from jdparser.schedule.schemas import (
     ArchivedRun,
     DayLock,
-    SEARCH_PRESETS,
     ScheduleResult,
     ScheduleSearchConfig,
 )
-from jdparser.schedule.store import ScheduleStore, s3_store_from_env
+from jdparser.schedule.store import ScheduleStore, s3_store_from_env, validate_search_slug
 
 log = logging.getLogger(__name__)
 
@@ -96,24 +95,41 @@ def schedule_date_from_event(event: dict[str, Any] | None) -> str:
     return value
 
 
-def search_preset_from_event(event: dict[str, Any] | None) -> str | None:
-    """Named location preset. None = S3 config/search.json (or defaults)."""
+def search_slug_from_event(event: dict[str, Any] | None) -> str | None:
+    """Lock-key slug. None = default day lock (no per-search partition)."""
     raw = None if event is None else event.get("search")
     if raw is None or raw == "":
         return None
-    key = str(raw)
-    if key not in SEARCH_PRESETS:
-        raise JDParserError(code="SCHEDULE_CONFIG_INVALID", message=f"unknown search: {key}")
-    return key
+    return validate_search_slug(str(raw))
+
+
+def _locations_from_event(event: dict[str, Any]) -> list[str] | None:
+    if "locations" not in event:
+        return None
+    raw = event["locations"]
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(item, str) and item for item in raw):
+        raise JDParserError(
+            code="SCHEDULE_CONFIG_INVALID",
+            message=f"invalid locations: {raw!r}",
+        )
+    return list(raw)
 
 
 def search_config_from_event(event: dict[str, Any] | None) -> ScheduleSearchConfig | None:
-    """Preset plus optional max_days_old override (1 = last 24h, 7 = last week)."""
-    search = search_preset_from_event(event)
-    if search is None:
+    """Build config from event locations / max_days_old. None = S3 config/search.json."""
+    if event is None:
         return None
-    cfg = SEARCH_PRESETS[search]
-    if event is None or "max_days_old" not in event:
+    search = search_slug_from_event(event)
+    has_locations = "locations" in event
+    has_days = "max_days_old" in event
+    if search is None and not has_locations and not has_days:
+        return None
+    cfg = ScheduleSearchConfig(
+        locations=_locations_from_event(event) if has_locations else None,
+    )
+    if not has_days:
         return cfg
     raw = event["max_days_old"]
     if raw is None or raw == "":
@@ -233,7 +249,7 @@ def run_scheduled_search(
     now_iso: str,
 ) -> ScheduleResult:
     schedule_date = schedule_date_from_event(event)
-    search = search_preset_from_event(event)
+    search = search_slug_from_event(event)
     lock = store.get_day_lock(schedule_date, search=search)
 
     if lock is not None and lock.status == "completed":
