@@ -140,11 +140,39 @@ same answer.
 
 The language work runs on DeepSeek V4 Flash (latest) through OpenRouter.
 
+## Daily Telegram recommendations
+
+EventBridge Scheduler runs the matcher at 07:00 America/Chicago, Monday through
+Friday (no weekend ticks). Monday: each of Texas, New York, Chicago, Boston for
+the last week. Tuesday–Friday: the same four locations for the last 24 hours.
+Reserved concurrency is 1, so the four locations start at 7:00 and stagger by
+16 minutes. The Lambda archives the `RunRecord` to S3 and sends new
+`is_qualified()` jobs to one Telegram chat. Pause with `enable_schedule = false`
+in `infra/terraform.tfvars`, never a one-shot `-var`.
+Operator steps: [`infra/RUNBOOK.md`](infra/RUNBOOK.md). Contract:
+[`specs/auto-job-recommendations/`](specs/auto-job-recommendations/).
+
+Compose is unchanged: `docker compose up` still serves FastAPI on port 8000.
+A live `lambda invoke` (SPEC §7.1) is not claimed until you follow the RUNBOOK
+(seed resume + secrets, push the ECR image, invoke).
+
+MVP stubs ([SPEC §9](specs/auto-job-recommendations/SPEC.md)):
+
+- LangGraph checkpointer is in-memory (lost on freeze). S3 is the archive, not a mid-tick resume.
+- One S3 resume (`resume/current`). One Telegram chat. No bot commands.
+- Search config is operator-uploaded `config/search.json` (defaults if missing).
+- The notified-job set never evicts.
+- Profiles are copied S3 ↔ `$JDPARSER_DATA_DIR/profiles`; no new cache API.
+- CloudWatch → Telegram alarm relay (`jdparser alarm:`) is off until
+  `enable_telegram_alerts` in tfvars. Flipping that flag off destroys the zip function.
+
 ## Digging deeper
 
 - `docs/system-overview.html` is an illustrated walkthrough of the pipeline.
 - `PLAN.md` covers what the project is trying to do, and `SPEC.md` is the detailed
   contract every component is built against.
+- Daily Telegram recommendations: section above, plus `specs/auto-job-recommendations/`
+  and `infra/RUNBOOK.md`.
 - `docs/IMPLEMENTATION_*.md` explain each area in depth, and every package under
   `packages/api/jdparser/` has a README describing what lives there.
 

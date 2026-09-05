@@ -43,6 +43,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends xvfb \
 # 3) Application source + editable project install.
 COPY jdparser ./jdparser
 RUN uv sync --frozen --no-dev
+# RIC for Lambda dual-mode (Linux wheel). Do not add to pyproject.toml — breaks macOS uv sync.
+RUN uv pip install --python /app/.venv/bin/python awslambdaric==4.0.2
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 

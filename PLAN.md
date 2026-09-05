@@ -34,7 +34,9 @@ returns `qualified` with confidence ≥ 0.75, backed by cited resume evidence.
 ## Out of scope (MVP)
 
 - Authentication / multi-tenant accounts (a single fixed `local` user).
-- Applying to jobs, saving searches, or any write-back to job boards.
+- Applying to jobs, or any write-back to job boards. Saving searches in the
+  **web UI** is out of scope. Daily scheduled search (S3 + Telegram) is a
+  separate plane: [`specs/auto-job-recommendations/`](specs/auto-job-recommendations/PLAN.md).
 - A SECOND job source. The `JobSource` seam exists (`jobsource/base.py`) and Adzuna is
   the only implementation — the abstraction is in place, multi-source is not.
 - A real database (resume cache and run records are JSON flat-files).

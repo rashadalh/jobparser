@@ -22,6 +22,7 @@
 | **M6 — API** | `runs/store.py`, `server.py`, background execution. | `IMPLEMENTATION_API.md` |
 | **M7 — Web** | Next.js upload → poll → results + audit. | `IMPLEMENTATION_WEB.md` |
 | **M_final — Polish** | README, end-to-end browser check, `.env` docs, audit-view copy discloses MVP stubs (SPEC §9). | `BUILD.md` (final phase) |
+| **Scheduled recommendations** | Daily 07:00 America/Chicago Lambda: S3 archive + Telegram. Separate orchestrator brief. | `specs/auto-job-recommendations/` |
 
 M2–M4 are independent (no shared files) and may run in parallel after M1. M5
 depends on M2–M4. M6 depends on M5. M7 depends on M6.

@@ -12,6 +12,7 @@ import jdparser.config
 from jdparser.config import (
     ADZUNA_DEFAULT_RESULTS_PER_PAGE,
     JDParserError,
+    LLM_TIMEOUT_S,
     NodeCfg,
 )
 from jdparser.llm import client as client_mod
@@ -244,6 +245,15 @@ def test_every_call_asks_openrouter_for_cost() -> None:
     spend silently becomes unknowable — every reasoning setting must carry it."""
     for setting in ("off", "low", "medium", "high"):
         assert _reasoning_body(setting)["usage"] == {"include": True}
+
+
+def test_openai_client_read_timeout_is_bounded() -> None:
+    """The SDK default is 600s; a hung OpenRouter completion must not stall a run that long."""
+    timeout = client_mod._oai.timeout
+    assert timeout is not None
+    read = getattr(timeout, "read", timeout)
+    assert float(read) == LLM_TIMEOUT_S
+    assert float(read) <= 90
 
 
 class _Dummy(BaseModel):

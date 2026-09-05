@@ -29,3 +29,16 @@ next-env.d.ts
 .DS_Store
 *.log
 
+# --- terraform (schedule plane) ---
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/tfplan
+infra/*.tfplan
+infra/.build/
+infra/lambda/**/*.zip
+infra/terraform.tfvars
+infra/*.secret
+infra/*.secret.json
+!infra/*.secret.example.json
+

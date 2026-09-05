@@ -29,10 +29,14 @@ Two LLM tiers (§3, §6.3), both low-cost open-weight models via **OpenRouter**:
 **text extraction** (turning JD prose into structured requirements) runs on
 **DeepSeek V4 Flash (latest)**.
 
-Three persistence layers, all JSON flat-files (no DB):
+Three persistence layers for the **browser** path, all JSON flat-files (no DB):
 - **Resume-profile cache** — durable, content-addressed; survives across runs (§3.6, §3.7).
 - **Run records** — per browser-initiated run; status + results for polling (§3.9).
 - **LangGraph checkpointer** — in-memory (MVP); resumes a single graph run only.
+
+A separate **scheduled** plane (S3 archive + Telegram recs, 07:00 America/Chicago)
+is specified in `specs/auto-job-recommendations/SPEC.md`. It reuses this graph and
+`is_qualified()`; it does not change this document's browser-path contracts.
 
 ---
 
@@ -129,6 +133,10 @@ jdparser/
 │       └── lib/
 │           ├── api.ts                 # fetch wrappers
 │           └── types.ts               # mirrors §3 API JSON (snake_case)
+├── specs/
+│   ├── README.md
+│   └── auto-job-recommendations/      # daily Lambda plane; that directory's SPEC.md is canonical for it
+├── infra/                             # Terraform for the scheduled plane (created by that build)
 ```
 
 ---
@@ -1014,7 +1022,8 @@ defaults to `[]`, so it needed no `SCHEMA_VERSION` bump.
   as the only implementation — the abstraction is in place; multi-source is not.
 - Countries other than `ADZUNA_COUNTRY`.
 - Applying to jobs / write-back.
-- A real database; durable cache and runs are JSON flat-files.
+- A SQL database for the browser path; durable cache and runs there are JSON
+  flat-files. The scheduled plane stores JSON in S3 (`specs/auto-job-recommendations`).
 - Push/streaming run progress (WebSocket/SSE) — frontend polls.
 - LLM-chosen display set — gating is deterministic code (§7).
 

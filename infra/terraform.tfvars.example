@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars (gitignored) and edit.
+# Persist enable_* flags here. Never pass them as a one-shot -var.
+#
+# Never set enable_schedule = true on first apply. CreateFunction needs a
+# pushed ECR image first (see RUNBOOK: target-then-push). The schedule
+# stays DISABLED until a later, deliberate tfvars apply.
+
+name_prefix                 = "jdparser"
+aws_region                  = "us-east-1"
+aws_profile                 = ""
+enable_schedule             = false
+enable_telegram_alerts      = false
+lambda_timeout_seconds      = 900
+lambda_memory_mb            = 3008
+lambda_ephemeral_mb         = 2048
+lambda_reserved_concurrency = 1
+api_image_tag               = "latest"
+log_retention_days          = 30
+alarm_email                 = ""
+bucket_name                 = null

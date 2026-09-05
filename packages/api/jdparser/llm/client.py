@@ -17,6 +17,7 @@ from jdparser.llm.usage import record_completion
 from jdparser.config import (
     JDParserError,
     LLM_MAX_RETRIES,
+    LLM_TIMEOUT_S,
     NodeCfg,
     OPENROUTER_API_KEY,
     OPENROUTER_APP_TITLE,
@@ -29,6 +30,7 @@ T = TypeVar("T", bound=BaseModel)
 _oai = OpenAI(
     base_url=OPENROUTER_BASE_URL,
     api_key=OPENROUTER_API_KEY,
+    timeout=LLM_TIMEOUT_S,  # default is 600s; a hung completion used to freeze screen_jobs
     default_headers={  # optional OpenRouter attribution
         "HTTP-Referer": OPENROUTER_APP_URL,
         "X-Title": OPENROUTER_APP_TITLE,
