@@ -401,9 +401,7 @@ def run_scheduled_search(
             )
         except Exception:
             log.exception("failed to write failed day lock")
-        if isinstance(exc, JDParserError):
-            raise
-        raise JDParserError(code="SCHEDULE_S3", message=str(exc)) from exc
+        raise
 
 
 def handler_with_deps(

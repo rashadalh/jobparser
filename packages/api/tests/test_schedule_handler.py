@@ -324,6 +324,27 @@ def test_resume_missing_fails_lock_no_invoke_no_send(patched_dirs: Path) -> None
     assert store.archives == {}
 
 
+def test_graph_failure_is_not_schedule_s3(patched_dirs: Path) -> None:
+    store = FakeStore()
+
+    class _Boom(_Recorder):
+        def __call__(
+            self, run_id: str, path: str, cfg: ScheduleSearchConfig
+        ) -> dict[str, Any]:
+            self.calls.append((run_id, path, cfg))
+            raise RuntimeError("graph boom")
+
+    invoke = _Boom()
+    with pytest.raises(RuntimeError, match="graph boom"):
+        _run(store=store, send=[], invoke=invoke)
+    assert len(invoke.calls) == 1
+    assert len(store.archives) == 1
+    lock = store.get_day_lock(SCHEDULE_DATE)
+    assert lock is not None
+    assert lock.status == "failed"
+    assert lock.error == "graph boom"
+
+
 def test_in_flight_lock_younger_than_stale_skipped(patched_dirs: Path) -> None:
     store = FakeStore()
     started = (
