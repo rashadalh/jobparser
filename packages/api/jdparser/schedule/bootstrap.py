@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from jdparser.config import JDParserError
+
 _RUNTIME_KEYS = ("OPENROUTER_API_KEY", "ADZUNA_APP_ID", "ADZUNA_APP_KEY")
 
 
@@ -16,8 +18,6 @@ def load_runtime_secrets(client: Any | None = None) -> None:
 
     Does not exec RIC. Missing keys → JDParserError(SCHEDULE_SECRET_MISSING).
     """
-    from jdparser.config import JDParserError
-
     arn = os.environ.get("RUNTIME_SECRET_ARN") or ""
     if not arn:
         raise JDParserError(

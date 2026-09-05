@@ -17,6 +17,7 @@ from jdparser.config import JDParserError, SCHEDULE_LOCK_STALE_S, SCHEDULE_TZ
 from jdparser.graph.nodes import is_qualified
 from jdparser.llm.schemas import RunRecord
 from jdparser.schedule import handler as handler_mod
+from jdparser.schedule import bootstrap as bootstrap_mod
 from jdparser.schedule.bootstrap import load_runtime_secrets, ric_python
 from jdparser.schedule.handler import (
     handler_with_deps,
@@ -409,7 +410,7 @@ def test_load_runtime_secrets_missing_key(monkeypatch: pytest.MonkeyPatch) -> No
         def get_secret_value(self, SecretId: str) -> dict[str, str]:
             return {"SecretString": json.dumps({"OPENROUTER_API_KEY": "only"})}
 
-    with pytest.raises(JDParserError) as ei:
+    with pytest.raises(bootstrap_mod.JDParserError) as ei:
         load_runtime_secrets(client=_Client())
     assert ei.value.code == "SCHEDULE_SECRET_MISSING"
 
