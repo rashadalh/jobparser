@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from jdparser.config import JDParserError, TELEGRAM_CHUNK_CHARS
+from jdparser.config import JDParserError, TELEGRAM_CHUNK_CHARS, TELEGRAM_SEND_TIMEOUT_S
 from jdparser.schedule import notify as notify_mod
 from jdparser.schedule.notify import (
     chunk_jobs,
@@ -360,3 +360,18 @@ def test_load_telegram_credentials_missing(monkeypatch: pytest.MonkeyPatch) -> N
 def test_chunk_jobs_default_limit_matches_config() -> None:
     """Sanity: production default is TELEGRAM_CHUNK_CHARS (used by notify_new_jobs)."""
     assert TELEGRAM_CHUNK_CHARS == 3500
+
+
+def test_telegram_relay_chunk_and_timeout_match_config() -> None:
+    """Alarm zip cannot import jdparser; names/values must match config.py."""
+    from pathlib import Path
+
+    text = (
+        Path(__file__).resolve().parents[3]
+        / "infra"
+        / "lambda"
+        / "telegram_relay"
+        / "handler.py"
+    ).read_text()
+    assert f"TELEGRAM_CHUNK_CHARS = {TELEGRAM_CHUNK_CHARS}" in text
+    assert f"TELEGRAM_SEND_TIMEOUT_S = {TELEGRAM_SEND_TIMEOUT_S}" in text

@@ -9,7 +9,9 @@ import urllib.request
 import boto3
 
 _creds: tuple[str, str] | None = None
-_CHUNK = 3500
+# Keep names and values in lockstep with jdparser.config (this zip cannot import it).
+TELEGRAM_CHUNK_CHARS = 3500
+TELEGRAM_SEND_TIMEOUT_S = 10
 
 
 def _load_credentials() -> tuple[str, str]:
@@ -40,8 +42,8 @@ def _format_alarm(message: str) -> str:
             body = " ".join(part for part in (name, state, reason) if part)
         else:
             body = message
-    if len(body) > _CHUNK:
-        body = body[: _CHUNK - 3] + "..."
+    if len(body) > TELEGRAM_CHUNK_CHARS:
+        body = body[: TELEGRAM_CHUNK_CHARS - 3] + "..."
     return f"jdparser alarm: {body}"
 
 
@@ -57,7 +59,7 @@ def _send(text: str, *, token: str, chat_id: str) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=TELEGRAM_SEND_TIMEOUT_S) as resp:
         status = int(getattr(resp, "status", 200))
         if not (200 <= status < 300):
             raise RuntimeError(f"telegram HTTP {status}")
