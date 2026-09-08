@@ -78,6 +78,9 @@ def _lock_age_s(now_iso_s: str, started_at: str) -> float:
     return (_aware_utc(now_iso_s) - _aware_utc(started_at)).total_seconds()
 
 
+_UNREPLACED_SCHEDULED_TIME = "<aws.scheduler.scheduled-time>"
+
+
 def schedule_date_from_event(event: dict[str, Any] | None) -> str:
     """SPEC §3.1. If event scheduled_time present (UTC ISO-8601, e.g. 2022-03-22T18:59:43Z):
     datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(ZoneInfo("America/Chicago")).date().isoformat()
@@ -87,7 +90,7 @@ def schedule_date_from_event(event: dict[str, Any] | None) -> str:
     """
     tz = ZoneInfo(SCHEDULE_TZ)
     raw = None if event is None else event.get("scheduled_time")
-    if raw:
+    if raw and str(raw) != _UNREPLACED_SCHEDULED_TIME:
         value = (
             datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
             .astimezone(tz)

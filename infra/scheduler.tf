@@ -32,12 +32,16 @@ resource "aws_scheduler_schedule" "search" {
   target {
     arn      = aws_lambda_function.search.arn
     role_arn = aws_iam_role.scheduler.arn
-    input = jsonencode({
-      scheduled_time = "<aws.scheduler.scheduled-time>"
-      search         = each.value.search
-      locations      = each.value.locations
-      max_days_old   = each.value.max_days_old
-    })
+    input = replace(
+      jsonencode({
+        scheduled_time = "AWS_SCHEDULER_SCHEDULED_TIME"
+        search         = each.value.search
+        locations      = each.value.locations
+        max_days_old   = each.value.max_days_old
+      }),
+      "AWS_SCHEDULER_SCHEDULED_TIME",
+      "<aws.scheduler.scheduled-time>",
+    )
 
     retry_policy {
       maximum_event_age_in_seconds = 3600

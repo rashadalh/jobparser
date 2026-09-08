@@ -181,6 +181,9 @@ def test_schedule_date_from_event_chicago_not_utc_slice() -> None:
         == "2022-03-22"
     )
     date.fromisoformat(schedule_date_from_event({}))
+    date.fromisoformat(
+        schedule_date_from_event({"scheduled_time": "<aws.scheduler.scheduled-time>"})
+    )
     assert ZoneInfo(SCHEDULE_TZ).key == "America/Chicago"
 
 
