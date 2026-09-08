@@ -27,7 +27,9 @@ from jdparser.schedule.store import (
     RESUME_KEY,
     S3ScheduleStore,
     ScheduleStore,
+    day_lock_key,
     parse_resume_suffix,
+    resume_object_key,
     s3_store_from_env,
 )
 
@@ -109,8 +111,8 @@ class MemoryScheduleStore:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
 
-    def get_resume(self) -> tuple[bytes, str]:
-        body = self.objects.get(RESUME_KEY)
+    def get_resume(self, key: str = RESUME_KEY) -> tuple[bytes, str]:
+        body = self.objects.get(key)
         if body is None:
             raise JDParserError(code="SCHEDULE_RESUME_MISSING")
         return body, parse_resume_suffix(body)
@@ -158,9 +160,7 @@ class MemoryScheduleStore:
     def get_day_lock(
         self, schedule_date: str, search: str | None = None
     ) -> DayLock | None:
-        date.fromisoformat(schedule_date)
-        suffix = f"/{search}" if search else ""
-        body = self.objects.get(f"state/day/{schedule_date}{suffix}.json")
+        body = self.objects.get(day_lock_key(schedule_date, search))
         if body is None:
             return None
         return DayLock.model_validate_json(body)
@@ -168,9 +168,7 @@ class MemoryScheduleStore:
     def put_day_lock(
         self, lock: DayLock, *, create_only: bool, search: str | None = None
     ) -> None:
-        date.fromisoformat(lock.schedule_date)
-        suffix = f"/{search}" if search else ""
-        key = f"state/day/{lock.schedule_date}{suffix}.json"
+        key = day_lock_key(lock.schedule_date, search)
         if create_only and key in self.objects:
             raise JDParserError(code="SCHEDULE_LOCK_HELD")
         self.objects[key] = lock.model_dump_json().encode("utf-8")
@@ -228,6 +226,28 @@ def test_get_resume_sniffs_pdf_and_ignores_content_type() -> None:
     assert suffix == ".pdf"
 
 
+def test_get_resume_alternate_key() -> None:
+    client = FakeS3Client()
+    client.objects["resume/quant-dev"] = b"%PDF-alt"
+    store = S3ScheduleStore(client, "test-bucket")
+    body, suffix = store.get_resume("resume/quant-dev")
+    assert body == b"%PDF-alt"
+    assert suffix == ".pdf"
+    with pytest.raises(JDParserError) as ei:
+        store.get_resume()
+    assert ei.value.code == "SCHEDULE_RESUME_MISSING"
+
+
+def test_resume_object_key_defaults_and_rejects_path_escape() -> None:
+    assert resume_object_key(None) == RESUME_KEY
+    assert resume_object_key("") == RESUME_KEY
+    assert resume_object_key("quant-dev") == "resume/quant-dev"
+    assert resume_object_key("resume/quant-dev") == "resume/quant-dev"
+    with pytest.raises(JDParserError) as ei:
+        resume_object_key("../secret")
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
+
+
 def test_default_config_when_missing(
     store_and_objs: tuple[ScheduleStore, dict[str, bytes]],
 ) -> None:
@@ -271,6 +291,19 @@ def test_day_lock_search_preset_is_separate_key(
     assert texas is not None and texas.run_id == "run-texas"
     assert "state/day/2026-08-25.json" in objs
     assert "state/day/2026-08-25/texas.json" in objs
+
+
+def test_day_lock_search_slug_must_be_path_safe(
+    store_and_objs: tuple[ScheduleStore, dict[str, bytes]],
+) -> None:
+    store, _ = store_and_objs
+    with pytest.raises(JDParserError) as ei:
+        store.put_day_lock(_day_lock(run_id="run-bad"), create_only=True, search="New York")
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
+    store.put_day_lock(_day_lock(run_id="run-paris"), create_only=True, search="paris")
+    loaded = store.get_day_lock("2026-08-25", search="paris")
+    assert loaded is not None
+    assert loaded.run_id == "run-paris"
 
 
 def test_notified_missing_is_empty(

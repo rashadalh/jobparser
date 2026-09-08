@@ -68,6 +68,10 @@ aws secretsmanager put-secret-value \
   --profile "$AWS_PROFILE"
 ```
 
+The `telegram-alerts` secret is the one chat for recs and alarms. Recs go out
+even when `enable_telegram_alerts` is false; that flag only creates the alarm
+relay zip.
+
 ## 3. Upload resume
 
 ```bash
@@ -76,8 +80,9 @@ aws s3 cp resume.pdf "s3://${BUCKET}/resume/current" \
   --region "$AWS_REGION" --profile "$AWS_PROFILE"
 ```
 
-Use the real resume path. Key must be `resume/current` (raw bytes; suffix is
-sniffed from magic bytes).
+Use the real resume path. Default key is `resume/current` (raw bytes; suffix is
+sniffed from magic bytes). A second PDF can live at `resume/{slug}`; pass
+`"resume_key":"<slug>"` on invoke. The weekday schedules keep using `current`.
 
 ## 4. Optional search config
 
@@ -97,21 +102,24 @@ aws s3 cp config/search.json "s3://${BUCKET}/config/search.json" \
 Empty payload uses now in `America/Chicago` for `schedule_date` and
 `config/search.json` (defaults if missing).
 
-Named location presets. Last week is the default (`max_days_old=7`). Last 24
-hours is `"max_days_old":1`. Each location has its own day lock, so you can
-run more than one the same day:
+`search` is a lock-key slug. Pass `locations` on the event (operator data;
+Terraform already does). Last week is `"max_days_old":7` (also the default when
+the event builds a config). Last 24 hours is `"max_days_old":1`. Each `search`
+has its own day lock, so you can run more than one the same day:
 
 ```bash
 FN="$(terraform output -raw search_function_name)"
 
 # (1) Texas, last week
 aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out \
-  --cli-read-timeout 900 --payload '{"search":"texas"}' \
+  --cli-read-timeout 900 \
+  --payload '{"search":"texas","locations":["Texas"]}' \
   --region "$AWS_REGION" --profile "$AWS_PROFILE" /tmp/out.json && cat /tmp/out.json
 
 # (2) New York, NY, last 24 hours
 aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out \
-  --cli-read-timeout 900 --payload '{"search":"new-york","max_days_old":1}' \
+  --cli-read-timeout 900 \
+  --payload '{"search":"new-york","locations":["New York, NY"],"max_days_old":1}' \
   --region "$AWS_REGION" --profile "$AWS_PROFILE" /tmp/out.json && cat /tmp/out.json
 ```
 
@@ -127,9 +135,17 @@ aws s3 ls "s3://${BUCKET}/runs/" --recursive \
 ```
 
 A successful tick writes `runs/{schedule_date}/{run_id}.json`. Telegram recs
-go to the chat in the telegram secret (`jdparser {schedule_date}:…`). Alarm
-relay messages (`jdparser alarm:…`) exist only if `enable_telegram_alerts`
-was applied later.
+and alarm relay messages share the chat in the `telegram-alerts` secret
+(recs: `jdparser {schedule_date}:…`; alarms: `jdparser alarm:…`). The alarm
+relay exists only if `enable_telegram_alerts` was applied later.
+
+Spend is on the archived `run.usage` object:
+
+```bash
+aws s3 cp "s3://${BUCKET}/runs/{schedule_date}/{run_id}.json" /tmp/run.json \
+  --region "$AWS_REGION" --profile "$AWS_PROFILE"
+python3 -c 'import json; print(json.load(open("/tmp/run.json"))["run"].get("usage"))'
+```
 
 ## 7. Pause / resume the weekday 07:00 schedules
 

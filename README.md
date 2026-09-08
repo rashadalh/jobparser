@@ -159,8 +159,10 @@ A live `lambda invoke` (SPEC §7.1) is not claimed until you follow the RUNBOOK
 MVP stubs ([SPEC §9](specs/auto-job-recommendations/SPEC.md)):
 
 - LangGraph checkpointer is in-memory (lost on freeze). S3 is the archive, not a mid-tick resume.
-- One S3 resume (`resume/current`). One Telegram chat. No bot commands.
-- Search config is operator-uploaded `config/search.json` (defaults if missing).
+- One default S3 resume (`resume/current`; invoke `resume_key` can pick another
+  object under `resume/`). One Telegram chat for recs and alarms. No bot commands.
+- Search locations are operator data on the Scheduler event (and optional
+  `config/search.json` when the event has no `search` / `locations`).
 - The notified-job set never evicts.
 - Profiles are copied S3 ↔ `$JDPARSER_DATA_DIR/profiles`; no new cache API.
 - CloudWatch → Telegram alarm relay (`jdparser alarm:`) is off until

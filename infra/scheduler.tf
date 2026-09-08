@@ -1,17 +1,18 @@
 # Four locations, reserved_concurrency=1 (notified-set mutex). Stagger 16 min
 # (Lambda timeout) starting 07:00 America/Chicago so ticks do not throttle.
 # Monday = last week; Tuesday–Friday = last 24 hours. No weekend ticks.
+# Locations are operator data here, not a Python preset list.
 
 locals {
   search_schedules = {
-    "mon-week-texas"    = { cron = "cron(0 7 ? * MON *)", search = "texas", max_days_old = 7 }
-    "mon-week-new-york" = { cron = "cron(16 7 ? * MON *)", search = "new-york", max_days_old = 7 }
-    "mon-week-chicago"  = { cron = "cron(32 7 ? * MON *)", search = "chicago", max_days_old = 7 }
-    "mon-week-boston"   = { cron = "cron(48 7 ? * MON *)", search = "boston", max_days_old = 7 }
-    "wkday-1d-texas"    = { cron = "cron(0 7 ? * TUE-FRI *)", search = "texas", max_days_old = 1 }
-    "wkday-1d-new-york" = { cron = "cron(16 7 ? * TUE-FRI *)", search = "new-york", max_days_old = 1 }
-    "wkday-1d-chicago"  = { cron = "cron(32 7 ? * TUE-FRI *)", search = "chicago", max_days_old = 1 }
-    "wkday-1d-boston"   = { cron = "cron(48 7 ? * TUE-FRI *)", search = "boston", max_days_old = 1 }
+    "mon-week-texas"    = { cron = "cron(0 7 ? * MON *)", search = "texas", locations = ["Texas"], max_days_old = 7 }
+    "mon-week-new-york" = { cron = "cron(16 7 ? * MON *)", search = "new-york", locations = ["New York, NY"], max_days_old = 7 }
+    "mon-week-chicago"  = { cron = "cron(32 7 ? * MON *)", search = "chicago", locations = ["Chicago, IL"], max_days_old = 7 }
+    "mon-week-boston"   = { cron = "cron(48 7 ? * MON *)", search = "boston", locations = ["Boston, MA"], max_days_old = 7 }
+    "wkday-1d-texas"    = { cron = "cron(0 7 ? * TUE-FRI *)", search = "texas", locations = ["Texas"], max_days_old = 1 }
+    "wkday-1d-new-york" = { cron = "cron(16 7 ? * TUE-FRI *)", search = "new-york", locations = ["New York, NY"], max_days_old = 1 }
+    "wkday-1d-chicago"  = { cron = "cron(32 7 ? * TUE-FRI *)", search = "chicago", locations = ["Chicago, IL"], max_days_old = 1 }
+    "wkday-1d-boston"   = { cron = "cron(48 7 ? * TUE-FRI *)", search = "boston", locations = ["Boston, MA"], max_days_old = 1 }
   }
 }
 
@@ -31,11 +32,16 @@ resource "aws_scheduler_schedule" "search" {
   target {
     arn      = aws_lambda_function.search.arn
     role_arn = aws_iam_role.scheduler.arn
-    input = jsonencode({
-      scheduled_time = "<aws.scheduler.scheduled-time>"
-      search         = each.value.search
-      max_days_old   = each.value.max_days_old
-    })
+    input = replace(
+      jsonencode({
+        scheduled_time = "AWS_SCHEDULER_SCHEDULED_TIME"
+        search         = each.value.search
+        locations      = each.value.locations
+        max_days_old   = each.value.max_days_old
+      }),
+      "AWS_SCHEDULER_SCHEDULED_TIME",
+      "<aws.scheduler.scheduled-time>",
+    )
 
     retry_policy {
       maximum_event_age_in_seconds = 3600

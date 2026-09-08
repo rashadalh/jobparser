@@ -15,15 +15,6 @@ class ScheduleSearchConfig(BaseModel):
     include_agencies: bool = False
 
 
-# Manual-invoke location presets. event["search"] selects one; last week = max_days_old=7.
-SEARCH_PRESETS: dict[str, ScheduleSearchConfig] = {
-    "texas": ScheduleSearchConfig(locations=["Texas"], max_days_old=7),
-    "new-york": ScheduleSearchConfig(locations=["New York, NY"], max_days_old=7),
-    "chicago": ScheduleSearchConfig(locations=["Chicago, IL"], max_days_old=7),
-    "boston": ScheduleSearchConfig(locations=["Boston, MA"], max_days_old=7),
-}
-
-
 class DayLock(BaseModel):
     schedule_date: str          # SPEC §3.1
     status: DayLockStatus

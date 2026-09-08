@@ -218,23 +218,11 @@ def load_telegram_credentials(secret_arn: str | None = None) -> tuple[str, str]:
 
     import boto3  # lazy: unit tests of format/chunk/notify_new_jobs need no AWS
 
-    try:
-        payload = boto3.client("secretsmanager").get_secret_value(SecretId=arn)
-        raw = payload.get("SecretString") or ""
-        parsed: object = json.loads(raw) if raw else {}
-    except JDParserError:
-        raise
-    except Exception as exc:
-        raise JDParserError(
-            code="SCHEDULE_SECRET_MISSING",
-            message="telegram secret unavailable",
-        ) from exc
+    from jdparser.schedule.secrets import load_secret_object
 
-    if not isinstance(parsed, dict):
-        raise JDParserError(
-            code="SCHEDULE_SECRET_MISSING",
-            message="telegram secret JSON is not an object",
-        )
+    parsed = load_secret_object(
+        boto3.client("secretsmanager"), arn, label="telegram"
+    )
     token_val = parsed.get("TELEGRAM_BOT_TOKEN")
     chat_val = parsed.get("TELEGRAM_CHAT_ID")
     token = token_val if isinstance(token_val, str) else ""

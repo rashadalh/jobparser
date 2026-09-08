@@ -17,20 +17,21 @@ from jdparser.config import JDParserError, SCHEDULE_LOCK_STALE_S, SCHEDULE_TZ
 from jdparser.graph.nodes import is_qualified
 from jdparser.llm.schemas import RunRecord
 from jdparser.schedule import handler as handler_mod
+from jdparser.schedule import bootstrap as bootstrap_mod
 from jdparser.schedule.bootstrap import load_runtime_secrets, ric_python
 from jdparser.schedule.handler import (
     handler_with_deps,
     partition_evaluated,
     schedule_date_from_event,
     search_config_from_event,
-    search_preset_from_event,
+    search_slug_from_event,
+    resume_key_from_event,
 )
 from jdparser.schedule.schemas import (
     ArchivedRun,
     DayLock,
     NotifiedJob,
     NotifiedSet,
-    SEARCH_PRESETS,
     ScheduleSearchConfig,
 )
 from jdparser.schedule.store import ScheduleStore
@@ -50,6 +51,7 @@ class FakeStore:
     def __init__(self) -> None:
         self.locks: dict[str, DayLock] = {}
         self.resume: tuple[bytes, str] | None = (b"%PDF-1.4\nresume", ".pdf")
+        self.resume_key_requested: str | None = None
         self.config = ScheduleSearchConfig()
         self.archives: dict[str, ArchivedRun] = {}
         self.notified = NotifiedSet(
@@ -58,7 +60,8 @@ class FakeStore:
         self.hydrate_dirs: list[Path] = []
         self.persist_dirs: list[Path] = []
 
-    def get_resume(self) -> tuple[bytes, str]:
+    def get_resume(self, key: str = "resume/current") -> tuple[bytes, str]:
+        self.resume_key_requested = key
         if self.resume is None:
             raise JDParserError(code="SCHEDULE_RESUME_MISSING")
         return self.resume
@@ -178,6 +181,9 @@ def test_schedule_date_from_event_chicago_not_utc_slice() -> None:
         == "2022-03-22"
     )
     date.fromisoformat(schedule_date_from_event({}))
+    date.fromisoformat(
+        schedule_date_from_event({"scheduled_time": "<aws.scheduler.scheduled-time>"})
+    )
     assert ZoneInfo(SCHEDULE_TZ).key == "America/Chicago"
 
 
@@ -323,6 +329,27 @@ def test_resume_missing_fails_lock_no_invoke_no_send(patched_dirs: Path) -> None
     assert store.archives == {}
 
 
+def test_graph_failure_is_not_schedule_s3(patched_dirs: Path) -> None:
+    store = FakeStore()
+
+    class _Boom(_Recorder):
+        def __call__(
+            self, run_id: str, path: str, cfg: ScheduleSearchConfig
+        ) -> dict[str, Any]:
+            self.calls.append((run_id, path, cfg))
+            raise RuntimeError("graph boom")
+
+    invoke = _Boom()
+    with pytest.raises(RuntimeError, match="graph boom"):
+        _run(store=store, send=[], invoke=invoke)
+    assert len(invoke.calls) == 1
+    assert len(store.archives) == 1
+    lock = store.get_day_lock(SCHEDULE_DATE)
+    assert lock is not None
+    assert lock.status == "failed"
+    assert lock.error == "graph boom"
+
+
 def test_in_flight_lock_younger_than_stale_skipped(patched_dirs: Path) -> None:
     store = FakeStore()
     started = (
@@ -409,7 +436,7 @@ def test_load_runtime_secrets_missing_key(monkeypatch: pytest.MonkeyPatch) -> No
         def get_secret_value(self, SecretId: str) -> dict[str, str]:
             return {"SecretString": json.dumps({"OPENROUTER_API_KEY": "only"})}
 
-    with pytest.raises(JDParserError) as ei:
+    with pytest.raises(bootstrap_mod.JDParserError) as ei:
         load_runtime_secrets(client=_Client())
     assert ei.value.code == "SCHEDULE_SECRET_MISSING"
 
@@ -438,33 +465,44 @@ def test_fake_store_is_schedule_store() -> None:
     assert store.get_search_config().broaden_search is True
 
 
-def test_search_preset_from_event() -> None:
-    assert search_preset_from_event({}) is None
-    assert search_preset_from_event({"search": ""}) is None
-    assert search_preset_from_event({"search": "texas"}) == "texas"
+def test_search_slug_from_event() -> None:
+    assert search_slug_from_event({}) is None
+    assert search_slug_from_event({"search": ""}) is None
+    assert search_slug_from_event({"search": "texas"}) == "texas"
+    assert search_slug_from_event({"search": "paris"}) == "paris"
     with pytest.raises(JDParserError) as ei:
-        search_preset_from_event({"search": "paris"})
+        search_slug_from_event({"search": "New York"})
     assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
 
 
 def test_search_config_from_event_max_days_old() -> None:
-    week = search_config_from_event({"search": "texas"})
+    week = search_config_from_event({"search": "texas", "locations": ["Texas"]})
     assert week is not None
     assert week.locations == ["Texas"]
     assert week.max_days_old == 7
-    day = search_config_from_event({"search": "new-york", "max_days_old": 1})
+    day = search_config_from_event(
+        {"search": "new-york", "locations": ["New York, NY"], "max_days_old": 1}
+    )
     assert day is not None
     assert day.locations == ["New York, NY"]
     assert day.max_days_old == 1
     with pytest.raises(JDParserError) as ei:
         search_config_from_event({"search": "texas", "max_days_old": "nope"})
     assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
+    with pytest.raises(JDParserError) as ei:
+        search_config_from_event({"search": "texas", "locations": "Texas"})
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
 
 
-def test_search_preset_1d_reaches_graph(patched_dirs: Path) -> None:
+def test_search_event_locations_reach_graph(patched_dirs: Path) -> None:
     store = FakeStore()
     invoke = _Recorder()
-    event = {**EVENT, "search": "chicago", "max_days_old": 1}
+    event = {
+        **EVENT,
+        "search": "chicago",
+        "locations": ["Chicago, IL"],
+        "max_days_old": 1,
+    }
     result = _run(store=store, send=[], invoke=invoke, event=event)
     assert result.status == "completed"
     cfg = invoke.calls[0][2]
@@ -472,29 +510,34 @@ def test_search_preset_1d_reaches_graph(patched_dirs: Path) -> None:
     assert cfg.max_days_old == 1
 
 
-def test_search_preset_overrides_locations(patched_dirs: Path) -> None:
+def test_search_event_overrides_s3_locations(patched_dirs: Path) -> None:
     store = FakeStore()
     store.config = ScheduleSearchConfig(locations=["Should Not Use"])
     invoke = _Recorder()
-    event = {**EVENT, "search": "texas"}
+    event = {**EVENT, "search": "texas", "locations": ["Texas"]}
     result = _run(store=store, send=[], invoke=invoke, event=event)
     assert result.status == "completed"
     cfg = invoke.calls[0][2]
-    assert cfg == SEARCH_PRESETS["texas"]
     assert cfg.locations == ["Texas"]
     assert cfg.max_days_old == 7
     assert store.get_day_lock(SCHEDULE_DATE, search="texas") is not None
     assert store.get_day_lock(SCHEDULE_DATE) is None
 
 
-def test_search_presets_do_not_share_day_lock(patched_dirs: Path) -> None:
+def test_search_slugs_do_not_share_day_lock(patched_dirs: Path) -> None:
     store = FakeStore()
     invoke = _Recorder()
     first = _run(
-        store=store, send=[], invoke=invoke, event={**EVENT, "search": "texas"}
+        store=store,
+        send=[],
+        invoke=invoke,
+        event={**EVENT, "search": "texas", "locations": ["Texas"]},
     )
     second = _run(
-        store=store, send=[], invoke=invoke, event={**EVENT, "search": "new-york"}
+        store=store,
+        send=[],
+        invoke=invoke,
+        event={**EVENT, "search": "new-york", "locations": ["New York, NY"]},
     )
     assert first.status == "completed"
     assert second.status == "completed"
@@ -503,7 +546,10 @@ def test_search_presets_do_not_share_day_lock(patched_dirs: Path) -> None:
     assert invoke.calls[0][2].locations == ["Texas"]
     assert invoke.calls[1][2].locations == ["New York, NY"]
     texas_again = _run(
-        store=store, send=[], invoke=invoke, event={**EVENT, "search": "texas"}
+        store=store,
+        send=[],
+        invoke=invoke,
+        event={**EVENT, "search": "texas", "locations": ["Texas"]},
     )
     assert texas_again.status == "skipped"
     assert texas_again.skip_reason == "already_completed"
@@ -515,3 +561,24 @@ def test_schedule_date_uses_chicago_tz_not_utc_prefix() -> None:
     chicago = utc.astimezone(ZoneInfo("America/Chicago")).date().isoformat()
     assert chicago == "2022-03-22"
     assert utc.date().isoformat() == "2022-03-23"
+
+
+def test_resume_key_from_event() -> None:
+    assert resume_key_from_event({}) == "resume/current"
+    assert resume_key_from_event({"resume_key": "quant-dev"}) == "resume/quant-dev"
+    assert resume_key_from_event({"resume_key": "resume/quant-dev"}) == "resume/quant-dev"
+    with pytest.raises(JDParserError) as ei:
+        resume_key_from_event({"resume_key": "../etc"})
+    assert ei.value.code == "SCHEDULE_CONFIG_INVALID"
+
+
+def test_resume_key_reaches_store(patched_dirs: Path) -> None:
+    store = FakeStore()
+    result = _run(
+        store=store,
+        send=[],
+        invoke=_Recorder(),
+        event={**EVENT, "resume_key": "quant-dev"},
+    )
+    assert result.status == "completed"
+    assert store.resume_key_requested == "resume/quant-dev"

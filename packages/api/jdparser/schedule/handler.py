@@ -31,11 +31,15 @@ from jdparser.schedule.notify import load_telegram_credentials, notify_new_jobs,
 from jdparser.schedule.schemas import (
     ArchivedRun,
     DayLock,
-    SEARCH_PRESETS,
     ScheduleResult,
     ScheduleSearchConfig,
 )
-from jdparser.schedule.store import ScheduleStore, s3_store_from_env
+from jdparser.schedule.store import (
+    ScheduleStore,
+    resume_object_key,
+    s3_store_from_env,
+    validate_search_slug,
+)
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +78,9 @@ def _lock_age_s(now_iso_s: str, started_at: str) -> float:
     return (_aware_utc(now_iso_s) - _aware_utc(started_at)).total_seconds()
 
 
+_UNREPLACED_SCHEDULED_TIME = "<aws.scheduler.scheduled-time>"
+
+
 def schedule_date_from_event(event: dict[str, Any] | None) -> str:
     """SPEC §3.1. If event scheduled_time present (UTC ISO-8601, e.g. 2022-03-22T18:59:43Z):
     datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(ZoneInfo("America/Chicago")).date().isoformat()
@@ -83,7 +90,7 @@ def schedule_date_from_event(event: dict[str, Any] | None) -> str:
     """
     tz = ZoneInfo(SCHEDULE_TZ)
     raw = None if event is None else event.get("scheduled_time")
-    if raw:
+    if raw and str(raw) != _UNREPLACED_SCHEDULED_TIME:
         value = (
             datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
             .astimezone(tz)
@@ -96,24 +103,41 @@ def schedule_date_from_event(event: dict[str, Any] | None) -> str:
     return value
 
 
-def search_preset_from_event(event: dict[str, Any] | None) -> str | None:
-    """Named location preset. None = S3 config/search.json (or defaults)."""
+def search_slug_from_event(event: dict[str, Any] | None) -> str | None:
+    """Lock-key slug. None = default day lock (no per-search partition)."""
     raw = None if event is None else event.get("search")
     if raw is None or raw == "":
         return None
-    key = str(raw)
-    if key not in SEARCH_PRESETS:
-        raise JDParserError(code="SCHEDULE_CONFIG_INVALID", message=f"unknown search: {key}")
-    return key
+    return validate_search_slug(str(raw))
+
+
+def _locations_from_event(event: dict[str, Any]) -> list[str] | None:
+    if "locations" not in event:
+        return None
+    raw = event["locations"]
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(item, str) and item for item in raw):
+        raise JDParserError(
+            code="SCHEDULE_CONFIG_INVALID",
+            message=f"invalid locations: {raw!r}",
+        )
+    return list(raw)
 
 
 def search_config_from_event(event: dict[str, Any] | None) -> ScheduleSearchConfig | None:
-    """Preset plus optional max_days_old override (1 = last 24h, 7 = last week)."""
-    search = search_preset_from_event(event)
-    if search is None:
+    """Build config from event locations / max_days_old. None = S3 config/search.json."""
+    if event is None:
         return None
-    cfg = SEARCH_PRESETS[search]
-    if event is None or "max_days_old" not in event:
+    search = search_slug_from_event(event)
+    has_locations = "locations" in event
+    has_days = "max_days_old" in event
+    if search is None and not has_locations and not has_days:
+        return None
+    cfg = ScheduleSearchConfig(
+        locations=_locations_from_event(event) if has_locations else None,
+    )
+    if not has_days:
         return cfg
     raw = event["max_days_old"]
     if raw is None or raw == "":
@@ -126,6 +150,13 @@ def search_config_from_event(event: dict[str, Any] | None) -> ScheduleSearchConf
             message=f"invalid max_days_old: {raw!r}",
         ) from exc
     return cfg.model_copy(update={"max_days_old": None if days <= 0 else days})
+
+
+def resume_key_from_event(event: dict[str, Any] | None) -> str:
+    raw = None if event is None else event.get("resume_key")
+    if raw is None or raw == "":
+        return resume_object_key(None)
+    return resume_object_key(str(raw))
 
 
 def partition_evaluated(
@@ -224,44 +255,55 @@ def _fail_lock(
     )
 
 
-def run_scheduled_search(
+def _skip_result(
     *,
-    event: dict[str, Any],
-    store: ScheduleStore,
-    send: Callable[[str], None],
-    invoke_graph: InvokeGraph,
-    now_iso: str,
+    schedule_date: str,
+    run_id: str | None,
+    skip_reason: str,
 ) -> ScheduleResult:
-    schedule_date = schedule_date_from_event(event)
-    search = search_preset_from_event(event)
-    lock = store.get_day_lock(schedule_date, search=search)
+    _log_phase("lock", schedule_date=schedule_date, run_id=run_id, ok=True)
+    _log_phase("done", schedule_date=schedule_date, run_id=run_id, ok=True)
+    return ScheduleResult(
+        ok=True,
+        status="skipped",
+        skip_reason=skip_reason,
+        schedule_date=schedule_date,
+        run_id=run_id,
+    )
 
+
+def _lock_skip(
+    lock: DayLock | None,
+    *,
+    schedule_date: str,
+    now_iso: str,
+) -> ScheduleResult | None:
     if lock is not None and lock.status == "completed":
-        _log_phase("lock", schedule_date=schedule_date, run_id=lock.run_id, ok=True)
-        _log_phase("done", schedule_date=schedule_date, run_id=lock.run_id, ok=True)
-        return ScheduleResult(
-            ok=True,
-            status="skipped",
-            skip_reason="already_completed",
+        return _skip_result(
             schedule_date=schedule_date,
             run_id=lock.run_id,
+            skip_reason="already_completed",
         )
-
     if lock is not None and lock.status == "running":
-        age = _lock_age_s(now_iso, lock.started_at)
-        if age < SCHEDULE_LOCK_STALE_S:
-            _log_phase("lock", schedule_date=schedule_date, run_id=lock.run_id, ok=True)
-            _log_phase("done", schedule_date=schedule_date, run_id=lock.run_id, ok=True)
-            return ScheduleResult(
-                ok=True,
-                status="skipped",
-                skip_reason="in_flight",
+        if _lock_age_s(now_iso, lock.started_at) < SCHEDULE_LOCK_STALE_S:
+            return _skip_result(
                 schedule_date=schedule_date,
                 run_id=lock.run_id,
+                skip_reason="in_flight",
             )
+    return None
 
-    run_id = str(uuid4())
-    started_at = now_iso
+
+def _claim_running_lock(
+    store: ScheduleStore,
+    *,
+    schedule_date: str,
+    search: str | None,
+    run_id: str,
+    started_at: str,
+    now_iso: str,
+    create_only: bool,
+) -> ScheduleResult | None:
     try:
         store.put_day_lock(
             DayLock(
@@ -271,24 +313,33 @@ def run_scheduled_search(
                 started_at=started_at,
                 updated_at=now_iso,
             ),
-            create_only=(lock is None),
+            create_only=create_only,
             search=search,
         )
     except JDParserError as exc:
         if exc.code == "SCHEDULE_LOCK_HELD":
-            _log_phase("lock", schedule_date=schedule_date, run_id=run_id, ok=True)
-            _log_phase("done", schedule_date=schedule_date, run_id=run_id, ok=True)
-            return ScheduleResult(
-                ok=True,
-                status="skipped",
-                skip_reason="lock_held",
+            return _skip_result(
                 schedule_date=schedule_date,
                 run_id=run_id,
+                skip_reason="lock_held",
             )
         raise
-
     _log_phase("lock", schedule_date=schedule_date, run_id=run_id, ok=True)
+    return None
 
+
+def _execute_claimed_tick(
+    *,
+    event: dict[str, Any],
+    store: ScheduleStore,
+    send: Callable[[str], None],
+    invoke_graph: InvokeGraph,
+    now_iso: str,
+    schedule_date: str,
+    search: str | None,
+    run_id: str,
+    started_at: str,
+) -> ScheduleResult:
     key: str | None = None
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -297,7 +348,7 @@ def run_scheduled_search(
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
         try:
-            body, suffix = store.get_resume()
+            body, suffix = store.get_resume(resume_key_from_event(event))
         except JDParserError:
             _log_phase("resume", schedule_date=schedule_date, run_id=run_id, ok=False)
             raise
@@ -401,9 +452,48 @@ def run_scheduled_search(
             )
         except Exception:
             log.exception("failed to write failed day lock")
-        if isinstance(exc, JDParserError):
-            raise
-        raise JDParserError(code="SCHEDULE_S3", message=str(exc)) from exc
+        raise
+
+
+def run_scheduled_search(
+    *,
+    event: dict[str, Any],
+    store: ScheduleStore,
+    send: Callable[[str], None],
+    invoke_graph: InvokeGraph,
+    now_iso: str,
+) -> ScheduleResult:
+    schedule_date = schedule_date_from_event(event)
+    search = search_slug_from_event(event)
+    lock = store.get_day_lock(schedule_date, search=search)
+    skipped = _lock_skip(lock, schedule_date=schedule_date, now_iso=now_iso)
+    if skipped is not None:
+        return skipped
+
+    run_id = str(uuid4())
+    started_at = now_iso
+    held = _claim_running_lock(
+        store,
+        schedule_date=schedule_date,
+        search=search,
+        run_id=run_id,
+        started_at=started_at,
+        now_iso=now_iso,
+        create_only=(lock is None),
+    )
+    if held is not None:
+        return held
+    return _execute_claimed_tick(
+        event=event,
+        store=store,
+        send=send,
+        invoke_graph=invoke_graph,
+        now_iso=now_iso,
+        schedule_date=schedule_date,
+        search=search,
+        run_id=run_id,
+        started_at=started_at,
+    )
 
 
 def handler_with_deps(

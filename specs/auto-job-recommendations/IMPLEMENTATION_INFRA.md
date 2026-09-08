@@ -159,12 +159,13 @@ Eight `aws_scheduler_schedule.search` ticks (`for_each`), timezone
 `America/Chicago`, `state = var.enable_schedule ? "ENABLED" : "DISABLED"`:
 
 - Monday last week: `cron({0,16,32,48} 7 ? * MON *)` for texas / new-york /
-  chicago / boston, payload `search` + `max_days_old=7`
+  chicago / boston, payload `search` + `locations` + `max_days_old=7`
 - Tuesday–Friday last 24h: `cron({0,16,32,48} 7 ? * TUE-FRI *)`, same
   locations, `max_days_old=1`
 
 16-minute stagger matches `LAMBDA_TIMEOUT_S` so reserved concurrency 1 does
-not throttle. No weekend ticks.
+not throttle. No weekend ticks. Cities, 07:00, and the stagger live in this
+file (operator data), not in Python.
 
 ```
 flexible_time_window { mode = "OFF" }
@@ -174,6 +175,7 @@ target {
   input    = jsonencode({
     scheduled_time = "<aws.scheduler.scheduled-time>"
     search         = ...
+    locations      = ...
     max_days_old   = ...
   })
   retry_policy {
